@@ -441,18 +441,12 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
     }
 
-    @SuppressWarnings("unchecked")
     static List<String> parsePerms(String json) {
         if (StrUtil.isBlank(json)) {
             return List.of();
         }
         try {
-            List<Object> raw = JSONUtil.toBean(json, List.class);
-            List<String> out = new ArrayList<>();
-            for (Object o : raw) {
-                out.add(String.valueOf(o));
-            }
-            return out;
+            return JSONUtil.toList(json, String.class);
         } catch (Exception e) {
             return List.of();
         }
