@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>淘街海外商城 · 后台管理</title>
+<link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="loginView" class="login-wrap">
+  <div class="login-card">
+    <h1>淘街海外商城</h1>
+    <p class="sub">后台管理 · Taojie Overseas Admin</p>
+    <label>管理员令牌（启动后端时设置的环境变量 ADMIN_TOKEN）</label>
+    <input id="tokenInput" type="password" placeholder="输入令牌后进入后台" autocomplete="off">
+    <button id="loginBtn" class="btn primary big">进入后台</button>
+    <p id="loginErr" class="err"></p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="appView" hidden>
+  <header class="topbar">
+    <div class="brand">淘街海外商城 <span>后台管理</span></div>
+    <button id="logoutBtn" class="btn ghost">退出</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="products" class="tab active">商品管理</button>
+    <button data-tab="categories" class="tab">分类管理</button>
+    <button data-tab="rfq" class="tab">询价列表</button>
+    <button data-tab="config" class="tab">站点配置</button>
+  </nav>
+
+  <main>
+    <!-- 商品 -->
+    <section id="tab-products">
+      <div class="toolbar">
+        <input id="pSearch" type="search" placeholder="搜索商品名 / ID">
+        <select id="pCatFilter"><option value="">全部分类</option></select>
+        <button id="pNew" class="btn primary">+ 新建商品</button>
+      </div>
+
+      <form id="pForm" class="panel" hidden>
+        <h2 id="pFormTitle">新建商品</h2>
+        <div class="grid">
+          <label>英文名 *<input id="f_en" required placeholder="Product name in English"></label>
+          <label>中文名<input id="f_zh" placeholder="中文商品名"></label>
+          <label>西班牙语名<input id="f_es"></label>
+          <label>法语名<input id="f_fr"></label>
+          <label>葡萄牙语名<input id="f_pt"></label>
+          <label>所属分类<select id="f_category"></select></label>
+          <label>价格 USD<input id="f_price" type="number" step="0.01" min="0"></label>
+          <label>原价 USD<input id="f_otprice" type="number" step="0.01" min="0"></label>
+          <label>起订量 MOQ<input id="f_moq" type="number" min="0"></label>
+          <label>单位<input id="f_unit" placeholder="pc / carton / set"></label>
+          <label>销量<input id="f_sales" type="number" min="0"></label>
+          <label>排序<input id="f_sort" type="number"></label>
+          <label>标签<input id="f_tag" placeholder="如 Hot / New"></label>
+          <label>tjmall 来源 ID<input id="f_source" placeholder="可留空"></label>
+        </div>
+        <label class="full">商品图片
+          <span class="imgrow">
+            <input id="f_image" placeholder="图片地址，或用右边按钮上传">
+            <input id="f_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <button type="button" id="f_upload" class="btn">上传图片</button>
+            <img id="f_preview" alt="" hidden>
+          </span>
+        </label>
+        <label class="full">商品简介<textarea id="f_blurb" rows="2" placeholder="一句话卖点（英文）"></textarea></label>
+        <label class="full">规格参数（每行一条，格式：名称: 值）<textarea id="f_specs" rows="3" placeholder="Mix ratio: 2 : 1&#10;Pack size: 1 L / 5 L"></textarea></label>
+        <label class="check"><input id="f_active" type="checkbox" checked> 上架（在前台显示）</label>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存商品</button>
+          <button type="button" id="pCancel" class="btn">取消</button>
+          <span id="pFormErr" class="err"></span>
+        </div>
+      </form>
+
+      <table class="tbl">
+        <thead><tr><th></th><th>ID</th><th>商品名</th><th>分类</th><th>价格</th><th>MOQ</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="pRows"></tbody>
+      </table>
+      <p id="pEmpty" class="empty" hidden>还没有商品，点右上角「新建商品」添加第一个。</p>
+    </section>
+
+    <!-- 分类 -->
+    <section id="tab-categories" hidden>
+      <form id="cForm" class="panel">
+        <h2 id="cFormTitle">新建分类</h2>
+        <div class="grid">
+          <label>分类 ID（英文，可留空自动生成）<input id="c_id" placeholder="如 clear-coats"></label>
+          <label>排序<input id="c_sort" type="number" value="0"></label>
+          <label>英文名 *<input id="c_en" placeholder="Category name"></label>
+          <label>中文名<input id="c_zh"></label>
+          <label>西班牙语名<input id="c_es"></label>
+          <label>法语名<input id="c_fr"></label>
+          <label>葡萄牙语名<input id="c_pt"></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存分类</button>
+          <button type="button" id="cReset" class="btn">清空（新建）</button>
+          <span id="cFormErr" class="err"></span>
+        </div>
+      </form>
+      <table class="tbl">
+        <thead><tr><th>ID</th><th>英文名</th><th>中文名</th><th>商品数</th><th>排序</th><th>操作</th></tr></thead>
+        <tbody id="cRows"></tbody>
+      </table>
+    </section>
+
+    <!-- 询价 -->
+    <section id="tab-rfq" hidden>
+      <div class="toolbar"><button id="rRefresh" class="btn">刷新</button><span class="hint">前台访客提交的询价会实时进到这里（最新 200 条）</span></div>
+      <table class="tbl">
+        <thead><tr><th>时间</th><th>姓名</th><th>联系方式</th><th>商品</th><th>数量</th><th>留言</th><th>语言</th></tr></thead>
+        <tbody id="rRows"></tbody>
+      </table>
+      <p id="rEmpty" class="empty" hidden>暂时还没有询价。</p>
+    </section>
+
+    <!-- 站点配置 -->
+    <section id="tab-config" hidden>
+      <form id="cfgForm" class="panel">
+        <h2>站点配置</h2>
+        <div class="grid">
+          <label>默认主题
+            <select id="cfg_theme">
+              <option value="a">A 经典大商超</option><option value="b">B 跨境专业</option>
+              <option value="c">C 极简现代</option><option value="d">D 深色工业</option>
+              <option value="e">E 橙色脉冲</option><option value="f">F 编辑批发</option>
+              <option value="g">G 港口贸易</option><option value="h">H 色彩场</option>
+            </select>
+          </label>
+          <label>默认语言
+            <select id="cfg_lang">
+              <option value="en">English</option><option value="zh">中文</option>
+              <option value="es">Español</option><option value="fr">Français</option>
+              <option value="pt">Português</option>
+            </select>
+          </label>
+          <label>首页主标题<input id="cfg_hero"></label>
+          <label>首页副标题<input id="cfg_sub"></label>
+          <label>顶部公告<input id="cfg_ann"></label>
+          <label>WhatsApp<input id="cfg_wa" placeholder="+86 ..."></label>
+          <label>联系邮箱<input id="cfg_email"></label>
+          <label>币种符号<input id="cfg_cur" placeholder="$"></label>
+        </div>
+        <label class="check"><input id="cfg_rfq" type="checkbox"> 显示询价入口</label>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存配置</button>
+          <span id="cfgErr" class="err"></span>
+          <span class="hint">保存后前台刷新即生效（访客自己切换过的主题/语言优先）。</span>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div id="toast" hidden></div>
+<script src="/admin/app.js"></script>
+</body>
+</html>

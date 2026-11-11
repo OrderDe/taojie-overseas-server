@@ -46,7 +46,17 @@ POST /api/rfq            { name*, contact*, company, country, productName, quant
 ```
 GET  /api/admin/rfq                 最新 200 条询价
 PUT  /api/admin/site-config         保存站点配置（字段同 pc-config.json）
+GET|POST /api/admin/products        商品列表（管理版）/ 新建商品
+PUT|DELETE /api/admin/products/{id} 修改 / 删除商品
+GET|POST /api/admin/categories      分类列表（管理版）/ 新建分类
+PUT|DELETE /api/admin/categories/{id} 修改 / 删除分类（下有商品时拒绝删除）
+POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}
 ```
+
+**后台管理界面**：启动后打开 **`/admin`**（静态页在 `src/main/resources/static/admin/`，
+与 Node 版共用同一套界面和接口契约），用 `ADMIN_TOKEN` 登录，含商品管理、
+分类管理、询价列表、站点配置四个页签。上传的图片存放在 `overseas.upload-dir`
+（默认 `./data/uploads`，可用环境变量 `UPLOAD_DIR` 覆盖），经 `/uploads/**` 访问。
 
 启动后 Swagger 文档在 `/swagger-ui.html`。
 

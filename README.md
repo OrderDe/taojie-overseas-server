@@ -38,6 +38,19 @@ Admin (header `x-admin-token: $ADMIN_TOKEN`):
 |---|---|
 | `GET /api/admin/rfq` | Latest 200 RFQ leads |
 | `PUT /api/admin/site-config` | Update site config (only known fields are accepted) |
+| `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
+| `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` | Category management (delete refuses while products use it) |
+| `POST /api/admin/upload` | Image upload as `{filename, dataBase64}` → `{url}` (png/jpg/webp/gif, ≤ 6 MB; files land in `data/uploads/`, served at `/uploads/`) |
+
+## Admin UI （后台管理界面）
+
+Open **`http://localhost:3100/admin`** — a small built-in management page
+(static files in `admin/`, no build step). Log in with the `ADMIN_TOKEN`
+value; the token is kept in sessionStorage and sent as `x-admin-token`.
+Tabs: 商品管理 (products), 分类管理 (categories), 询价列表 (RFQs), 站点配置
+(site config). The **Java implementation serves the same UI and the same
+admin API**, so day-to-day management looks identical whichever backend
+is deployed.
 
 New RFQs are also POSTed as JSON to `RFQ_WEBHOOK_URL` when set (mail /
 WhatsApp notification gateway hook).

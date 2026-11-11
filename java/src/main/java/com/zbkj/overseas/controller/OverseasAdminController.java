@@ -1,0 +1,142 @@
+package com.zbkj.overseas.controller;
+
+import com.zbkj.overseas.common.exception.OverseasException;
+import com.zbkj.overseas.common.result.CommonResult;
+import com.zbkj.overseas.common.result.CommonResultCode;
+import com.zbkj.overseas.request.CategorySaveRequest;
+import com.zbkj.overseas.request.ProductSaveRequest;
+import com.zbkj.overseas.request.UploadRequest;
+import com.zbkj.overseas.response.AdminCategoryResponse;
+import com.zbkj.overseas.response.AdminProductResponse;
+import com.zbkj.overseas.service.OverseasCategoryService;
+import com.zbkj.overseas.service.OverseasProductService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Admin controller for the management UI (static page at /admin, served from
+ * classpath:/static/admin). Every path here sits under /api/admin/**, so
+ * AdminTokenInterceptor guards them all — same contract as the Node backend:
+ * the UI logs in with the ADMIN_TOKEN and sends it as x-admin-token.
+ */
+@Slf4j
+@RestController
+@RequestMapping("api/admin")
+@Tag(name = "海外管理后台控制器")
+public class OverseasAdminController {
+
+    private static final Set<String> IMAGE_EXTS = Set.of(".png", ".jpg", ".jpeg", ".webp", ".gif");
+    private static final int MAX_IMAGE_BYTES = 6_000_000;
+
+    @Autowired
+    private OverseasProductService productService;
+
+    @Autowired
+    private OverseasCategoryService categoryService;
+
+    @Value("${overseas.upload-dir:./data/uploads}")
+    private String uploadDir;
+
+    // ---- products ----
+
+    @Operation(summary = "管理端：全部商品（含下架）")
+    @GetMapping("/products")
+    public CommonResult<List<AdminProductResponse>> products() {
+        return CommonResult.success(productService.listForAdmin());
+    }
+
+    @Operation(summary = "管理端：新建商品")
+    @PostMapping("/products")
+    public CommonResult<AdminProductResponse> createProduct(@RequestBody ProductSaveRequest request) {
+        return CommonResult.success(productService.saveForAdmin(request, null));
+    }
+
+    @Operation(summary = "管理端：修改商品")
+    @PutMapping("/products/{id}")
+    public CommonResult<AdminProductResponse> updateProduct(@PathVariable Long id,
+                                                            @RequestBody ProductSaveRequest request) {
+        return CommonResult.success(productService.saveForAdmin(request, id));
+    }
+
+    @Operation(summary = "管理端：删除商品")
+    @DeleteMapping("/products/{id}")
+    public CommonResult<Map<String, Object>> deleteProduct(@PathVariable Long id) {
+        productService.deleteForAdmin(id);
+        return CommonResult.success(Map.of("ok", true));
+    }
+
+    // ---- categories ----
+
+    @Operation(summary = "管理端：全部分类")
+    @GetMapping("/categories")
+    public CommonResult<List<AdminCategoryResponse>> categories() {
+        return CommonResult.success(categoryService.listForAdmin());
+    }
+
+    @Operation(summary = "管理端：新建分类")
+    @PostMapping("/categories")
+    public CommonResult<AdminCategoryResponse> createCategory(@RequestBody CategorySaveRequest request) {
+        return CommonResult.success(categoryService.saveForAdmin(request, null));
+    }
+
+    @Operation(summary = "管理端：修改分类")
+    @PutMapping("/categories/{id}")
+    public CommonResult<AdminCategoryResponse> updateCategory(@PathVariable String id,
+                                                              @RequestBody CategorySaveRequest request) {
+        return CommonResult.success(categoryService.saveForAdmin(request, id));
+    }
+
+    @Operation(summary = "管理端：删除分类（下有商品时拒绝）")
+    @DeleteMapping("/categories/{id}")
+    public CommonResult<Map<String, Object>> deleteCategory(@PathVariable String id) {
+        categoryService.deleteForAdmin(id);
+        return CommonResult.success(Map.of("ok", true));
+    }
+
+    // ---- image upload ----
+
+    @Operation(summary = "管理端：上传商品图（base64），返回可访问地址")
+    @PostMapping("/upload")
+    public CommonResult<Map<String, Object>> upload(@RequestBody UploadRequest request) throws IOException {
+        String filename = request.getFilename() == null ? "" : request.getFilename();
+        String ext = "";
+        int dot = filename.lastIndexOf('.');
+        if (dot >= 0) {
+            ext = filename.substring(dot).toLowerCase();
+        }
+        if (!IMAGE_EXTS.contains(ext)) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "只允许 png/jpg/webp/gif 图片");
+        }
+        byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(request.getDataBase64() == null ? "" : request.getDataBase64());
+        } catch (IllegalArgumentException e) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "图片数据无效");
+        }
+        if (bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "图片为空或超过 6 MB");
+        }
+        String safe = Paths.get(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "-");
+        String name = System.currentTimeMillis() + "-" + safe;
+        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Files.createDirectories(dir);
+        Files.write(dir.resolve(name), bytes);
+        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/uploads/").path(name).toUriString();
+        return CommonResult.success(Map.of("url", url));
+    }
+}

@@ -57,3 +57,5 @@ overseas:
   admin-token: ${ADMIN_TOKEN:}
   # 询价通知 webhook（邮件/WhatsApp 网关），为空则不通知
   rfq-webhook-url: ${RFQ_WEBHOOK_URL:}
+  # 管理后台上传图片的存放目录，/uploads/** 映射到这里；放 jar 外面，重新部署不丢图
+  upload-dir: ${UPLOAD_DIR:./data/uploads}
