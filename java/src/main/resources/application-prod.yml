@@ -1,0 +1,39 @@
+# =============================================================
+# prod — 生产环境（对应 tjmall 的 application-prod.yml）
+# tjmall prod 与 dev/beta 的差别照搬到这里：
+#   - MySQL 端口、连接参数不同（prod 用 3307 口风格与更长的 URL 参数串）
+#   - Druid 池明显放大：initial-size/min-idle 10、max-wait 10000
+# 海外 prod 跑在雅加达服务器：INFRA_HOST、DB_USER、DB_PASSWORD
+# 全部走服务器环境变量注入，仓库里不落任何真实地址与密码。
+# 正式库名：taojie_overseas（与 sql/schema.sql 一致）。
+# =============================================================
+infra:
+  host: ${INFRA_HOST:127.0.0.1}
+
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${infra.host}:${DB_PORT:3306}/taojie_overseas?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    druid:
+      initial-size: 10 # prod 池参数与 tjmall prod 一致
+      min-idle: 10
+      max-active: 50
+      max-wait: 10000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      keep-alive: true
+      max-evictable-idle-time-millis: 900000
+      remove-abandoned: true
+      remove-abandoned-timeout: 60
+      log-abandoned: true
+
+logging:
+  level:
+    com.zbkj.overseas: info

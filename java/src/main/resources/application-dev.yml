@@ -1,0 +1,37 @@
+# =============================================================
+# dev — 开发环境（对应 tjmall 的 application-dev.yml）
+# tjmall dev 的 MySQL：jdbc:mysql://${infra.host}:3306/merchant_single_open，
+# Druid 连接池、参数与它逐项对齐；海外版只换库名与密码来源：
+# 密码走环境变量 DB_PASSWORD，不把明文写进仓库
+# （tjmall 的 yml 里是明文，海外仓库是 Public，必须改掉这一条）。
+# =============================================================
+infra:
+  host: ${INFRA_HOST:127.0.0.1} # 本机 MySQL；换机器只改 INFRA_HOST
+
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${infra.host}:3306/taojie_overseas_dev?characterEncoding=utf-8&useSSL=false&serverTimeZone=GMT+8&connectTimeout=3000&socketTimeout=30000
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    druid:
+      initial-size: 1 # 以下 Druid 参数与 tjmall dev 完全一致
+      min-idle: 1
+      max-active: 50
+      max-wait: 3000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      keep-alive: true
+      max-evictable-idle-time-millis: 900000
+      remove-abandoned: true
+      remove-abandoned-timeout: 60
+      log-abandoned: true
+
+logging:
+  level:
+    com.zbkj.overseas: debug

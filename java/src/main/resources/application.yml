@@ -1,45 +1,59 @@
+# =============================================================
+# tjMall-overseas 主配置（环境无关部分）
+# 环境划分与 tjmall 完全一致：dev / test / beta / prod 四套 profile，
+# 分别在 application-dev.yml / application-test.yml /
+# application-beta.yml / application-prod.yml 中维护各自的基础设施
+# 地址（infra.host）与 MySQL 环境。切换环境只改这里的 active，
+# 或启动时加 --spring.profiles.active=prod / 环境变量 SPRING_PROFILES_ACTIVE。
+# tjmall 的 application.yml 里 active 写的也是 beta。
+# =============================================================
 server:
-  port: 3100   # same port as the interim Node service: Nginx /api/ proxy stays unchanged
+  port: 3100 # 与 Node 版一致，Nginx 的 /api/ 反代不用动
+  forward-headers-strategy: framework # 与 tjmall 一致：识别网关/反代传来的前缀
 
 spring:
   application:
     name: tjMall-overseas
-  datasource:
-    # The overseas service has its OWN MySQL database in Jakarta.
-    # It never connects to tjmall's database in China; product data
-    # arrives through the import job (tools/import-products.py).
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:taojie_overseas}?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD:}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  sql:
-    init:
-      mode: never   # schema is applied manually from sql/schema.sql (same ops habit as tjmall's sql/ folder)
+  profiles:
+    active: beta
+  main:
+    allow-bean-definition-overriding: true
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
 
+# mybatis-plus（与 tjmall application.yml 同款配置）
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*Mapper.xml
-  type-aliases-package: com.zbkj.overseas.model
   configuration:
     map-underscore-to-camel-case: true
   global-config:
     db-config:
-      id-type: auto
+      id-type: AUTO # 主键策略：走 DB AUTO_INCREMENT（同 tjmall）
 
 pagehelper:
   helper-dialect: mysql
   reasonable: true
   support-methods-arguments: true
 
+# swagger / openapi（tjmall 用 knife4j；接口文档在 /swagger-ui.html）
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+knife4j:
+  enable: true
 
-overseas:
-  # Shared secret for /api/admin/** (header: x-admin-token). Set in production.
-  admin-token: ${ADMIN_TOKEN:}
-  # Optional: POST every new RFQ here (mail/WhatsApp gateway). Empty = disabled.
-  rfq-webhook-url: ${RFQ_WEBHOOK_URL:}
-
+# 统一日志目录（同 tjmall 习惯）
 logging:
+  file:
+    path: ./logs
   level:
     com.zbkj.overseas: info
+
+# 海外站自身配置（各环境可覆盖 admin-token 等）
+overseas:
+  # /api/admin/** 的共享口令（请求头 x-admin-token），生产环境务必用环境变量注入
+  admin-token: ${ADMIN_TOKEN:}
+  # 询价通知 webhook（邮件/WhatsApp 网关），为空则不通知
+  rfq-webhook-url: ${RFQ_WEBHOOK_URL:}

@@ -1,0 +1,32 @@
+# =============================================================
+# beta — 预发/默认环境（对应 tjmall 的 application-beta.yml）
+# tjmall 主配置里默认 active 就是 beta；beta 的 MySQL 与 dev 同构
+# （${infra.host}:3306/merchant_single_open + 同款 Druid 参数），
+# 海外版 beta 连自己的预发库 taojie_overseas_beta。
+# =============================================================
+infra:
+  host: ${INFRA_HOST:127.0.0.1}
+
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${infra.host}:3306/taojie_overseas_beta?characterEncoding=utf-8&useSSL=false&serverTimeZone=GMT+8&connectTimeout=3000&socketTimeout=30000
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    druid:
+      initial-size: 1
+      min-idle: 1
+      max-active: 50
+      max-wait: 3000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      keep-alive: true
+      max-evictable-idle-time-millis: 900000
+      remove-abandoned: true
+      remove-abandoned-timeout: 60
+      log-abandoned: true
