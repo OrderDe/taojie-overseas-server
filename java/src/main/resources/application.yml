@@ -1,0 +1,45 @@
+server:
+  port: 3100   # same port as the interim Node service: Nginx /api/ proxy stays unchanged
+
+spring:
+  application:
+    name: tjMall-overseas
+  datasource:
+    # The overseas service has its OWN MySQL database in Jakarta.
+    # It never connects to tjmall's database in China; product data
+    # arrives through the import job (tools/import-products.py).
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:taojie_overseas}?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: never   # schema is applied manually from sql/schema.sql (same ops habit as tjmall's sql/ folder)
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*Mapper.xml
+  type-aliases-package: com.zbkj.overseas.model
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+pagehelper:
+  helper-dialect: mysql
+  reasonable: true
+  support-methods-arguments: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+overseas:
+  # Shared secret for /api/admin/** (header: x-admin-token). Set in production.
+  admin-token: ${ADMIN_TOKEN:}
+  # Optional: POST every new RFQ here (mail/WhatsApp gateway). Empty = disabled.
+  rfq-webhook-url: ${RFQ_WEBHOOK_URL:}
+
+logging:
+  level:
+    com.zbkj.overseas: info

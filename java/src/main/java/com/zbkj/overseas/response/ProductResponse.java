@@ -1,0 +1,49 @@
+package com.zbkj.overseas.response;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Product row returned to the storefront. Field names deliberately match
+ * what the overseas PC frontend already consumes (name/price/otPrice/...),
+ * so the Java service is a drop-in replacement for the interim Node service.
+ */
+@Data
+@Schema(name = "ProductResponse", description = "海外商品")
+public class ProductResponse implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+
+    private String categoryId;
+
+    @Schema(description = "按请求语言解析后的商品名")
+    private String name;
+
+    @Schema(description = "美元价")
+    private BigDecimal price;
+
+    @Schema(description = "美元原价")
+    private BigDecimal otPrice;
+
+    private Integer sales;
+
+    private String unit;
+
+    private Integer moq;
+
+    private String image;
+
+    private String tag;
+
+    @Schema(description = "按请求语言解析后的简介")
+    private String description;
+
+    private Map<String, String> specs = new LinkedHashMap<>();
+}
