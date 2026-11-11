@@ -21,6 +21,9 @@ public class ProductSaveRequest {
     @Schema(description = "分类 id")
     private String categoryId;
 
+    @Schema(description = "品牌 id，可留空（无品牌）")
+    private String brandId;
+
     @Schema(description = "多语言商品名 {en, zh, es, fr, pt}，en/zh 至少填一个")
     private Map<String, String> names;
 

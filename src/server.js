@@ -14,6 +14,7 @@
 //   POST /api/admin/login              (username+password -> session token)
 //   GET|POST|PUT|DELETE /api/admin/products[/:id]     (catalogue management)
 //   GET|POST|PUT|DELETE /api/admin/categories[/:id]   (category management)
+//   GET|POST|PUT|DELETE /api/admin/brands[/:id]       (brand management, plat-style)
 //   GET|POST|PUT|DELETE /api/admin/users[/:id]        (admin accounts)
 //   GET|POST|PUT|DELETE /api/admin/roles[/:id]        (roles = menu permissions)
 //   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url})
@@ -78,6 +79,13 @@ db.exec(`
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL DEFAULT '{}'
   );
+  CREATE TABLE IF NOT EXISTS brands (
+    id TEXT PRIMARY KEY,
+    names TEXT NOT NULL DEFAULT '{}',
+    logo TEXT NOT NULL DEFAULT '',
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1
+  );
   CREATE TABLE IF NOT EXISTS admin_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -101,6 +109,9 @@ db.exec(`
 `)
 // Products gained a sort column after the first release; add it in place.
 try { db.exec('ALTER TABLE products ADD COLUMN sort INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
+// Products gained a brand link when brand management landed (plat has
+// brands as a first-class catalogue entity, products reference one).
+try { db.exec("ALTER TABLE products ADD COLUMN brand_id TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
 mkdirSync(UPLOAD_DIR, { recursive: true })
 
 function seedIfEmpty() {
@@ -140,6 +151,12 @@ function pickLang(namesJson, lang) {
   return names[lang] || names.en || Object.values(names)[0] || ''
 }
 
+function brandName(brandId, lang) {
+  if (!brandId) return ''
+  const brand = db.prepare('SELECT names FROM brands WHERE id = ?').get(brandId)
+  return brand ? pickLang(brand.names, lang) : ''
+}
+
 function productOut(row, lang) {
   const cat = db.prepare('SELECT names FROM categories WHERE id = ?').get(row.category_id)
   let specs = {}
@@ -149,6 +166,8 @@ function productOut(row, lang) {
     name: pickLang(row.names, lang),
     categoryId: row.category_id,
     category: cat ? pickLang(cat.names, lang) : '',
+    brandId: row.brand_id || '',
+    brand: brandName(row.brand_id, lang),
     price: row.price,
     otPrice: row.ot_price,
     sales: row.sales,
@@ -272,7 +291,7 @@ function requiredPerm(path) {
   if (path === '/api/admin/login') return undefined
   if (path === '/api/admin/me' || path === '/api/admin/logout') return null
   if (path.startsWith('/api/admin/users') || path.startsWith('/api/admin/roles') || path === '/api/admin/permissions') return 'users'
-  if (path.startsWith('/api/admin/products') || path === '/api/admin/upload') return 'products'
+  if (path.startsWith('/api/admin/products') || path.startsWith('/api/admin/brands') || path === '/api/admin/upload') return 'products'
   if (path.startsWith('/api/admin/categories')) return 'categories'
   if (path === '/api/admin/rfq') return 'rfq'
   if (path === '/api/admin/site-config') return 'config'
@@ -318,11 +337,24 @@ function parseJsonCol(text, fallback) {
   try { const v = JSON.parse(text || ''); return v && typeof v === 'object' ? v : fallback } catch { return fallback }
 }
 
+function adminBrandOut(row) {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE brand_id = ?').get(row.id)
+  return {
+    id: row.id,
+    names: parseJsonCol(row.names, {}),
+    logo: row.logo || '',
+    sort: row.sort || 0,
+    active: row.active === 1,
+    count: n
+  }
+}
+
 function adminProductOut(row) {
   return {
     id: row.id,
     sourceId: row.source_id,
     categoryId: row.category_id,
+    brandId: row.brand_id || '',
     names: parseJsonCol(row.names, {}),
     price: row.price,
     otPrice: row.ot_price,
@@ -343,9 +375,12 @@ function adminProductOut(row) {
 function productValues(body) {
   const names = body.names && typeof body.names === 'object' ? body.names : {}
   if (!String(names.en || names.zh || '').trim()) return 'product name (English) is required'
+  const brandId = String(body.brandId || '')
+  if (brandId && !db.prepare('SELECT id FROM brands WHERE id = ?').get(brandId)) return 'brand not found'
   return {
     sourceId: String(body.sourceId ?? ''),
     categoryId: String(body.categoryId || ''),
+    brandId,
     names: JSON.stringify(names),
     price: Number(body.price) || 0,
     otPrice: Number(body.otPrice) || 0,
@@ -490,9 +525,9 @@ const server = createServer(async (req, res) => {
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
       const info = db.prepare(`INSERT INTO products
-        (source_id, category_id, names, price, ot_price, sales, unit, moq, image, tag, blurb, specs, sort, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(v.sourceId, v.categoryId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active)
+        (source_id, category_id, brand_id, names, price, ot_price, sales, unit, moq, image, tag, blurb, specs, sort, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active)
       const row = db.prepare('SELECT * FROM products WHERE id = ?').get(Number(info.lastInsertRowid))
       return send(res, 201, adminProductOut(row))
     }
@@ -503,9 +538,9 @@ const server = createServer(async (req, res) => {
       if (!db.prepare('SELECT id FROM products WHERE id = ?').get(id)) return send(res, 404, { error: 'product not found' })
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
-      db.prepare(`UPDATE products SET source_id = ?, category_id = ?, names = ?, price = ?, ot_price = ?,
+      db.prepare(`UPDATE products SET source_id = ?, category_id = ?, brand_id = ?, names = ?, price = ?, ot_price = ?,
         sales = ?, unit = ?, moq = ?, image = ?, tag = ?, blurb = ?, specs = ?, sort = ?, active = ? WHERE id = ?`)
-        .run(v.sourceId, v.categoryId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active, id)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active, id)
       return send(res, 200, adminProductOut(db.prepare('SELECT * FROM products WHERE id = ?').get(id)))
     }
     if (adminProductMatch && req.method === 'DELETE') {
@@ -555,6 +590,52 @@ const server = createServer(async (req, res) => {
       if (n > 0) return send(res, 400, { error: `category still has ${n} product(s); move or delete them first` })
       db.prepare('DELETE FROM categories WHERE id = ?').run(id)
       return send(res, 200, { ok: true })
+    }
+
+    // ---- Admin: brand management (mirrors plat's brand module) ----
+    if (path === '/api/admin/brands' && req.method === 'GET') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const rows = db.prepare('SELECT * FROM brands ORDER BY sort, id').all()
+      return send(res, 200, rows.map(adminBrandOut))
+    }
+    if (path === '/api/admin/brands' && req.method === 'POST') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const body = await readBody(req)
+      const names = body.names && typeof body.names === 'object' ? body.names : {}
+      if (!String(names.en || names.zh || '').trim()) return send(res, 400, { error: 'brand name (English) is required' })
+      let id = String(body.id || '').trim()
+      if (id && !/^[a-zA-Z0-9_-]+$/.test(id)) return send(res, 400, { error: 'brand id may only contain letters, digits, - and _' })
+      if (!id) id = 'b' + Date.now().toString(36)
+      if (db.prepare('SELECT id FROM brands WHERE id = ?').get(id)) return send(res, 400, { error: 'brand id already exists' })
+      db.prepare('INSERT INTO brands (id, names, logo, sort, active) VALUES (?, ?, ?, ?, ?)')
+        .run(id, JSON.stringify(names), String(body.logo || ''), Math.trunc(Number(body.sort) || 0), body.active === false ? 0 : 1)
+      return send(res, 201, adminBrandOut(db.prepare('SELECT * FROM brands WHERE id = ?').get(id)))
+    }
+    const adminBrandMatch = path.match(/^\/api\/admin\/brands\/([^/]+)$/)
+    if (adminBrandMatch && req.method === 'PUT') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const id = decodeURIComponent(adminBrandMatch[1])
+      if (!db.prepare('SELECT id FROM brands WHERE id = ?').get(id)) return send(res, 404, { error: 'brand not found' })
+      const body = await readBody(req)
+      const names = body.names && typeof body.names === 'object' ? body.names : {}
+      if (!String(names.en || names.zh || '').trim()) return send(res, 400, { error: 'brand name (English) is required' })
+      db.prepare('UPDATE brands SET names = ?, logo = ?, sort = ?, active = ? WHERE id = ?')
+        .run(JSON.stringify(names), String(body.logo || ''), Math.trunc(Number(body.sort) || 0), body.active === false ? 0 : 1, id)
+      return send(res, 200, adminBrandOut(db.prepare('SELECT * FROM brands WHERE id = ?').get(id)))
+    }
+    if (adminBrandMatch && req.method === 'DELETE') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const id = decodeURIComponent(adminBrandMatch[1])
+      const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE brand_id = ?').get(id)
+      if (n > 0) return send(res, 400, { error: `brand still has ${n} product(s); reassign or delete them first` })
+      db.prepare('DELETE FROM brands WHERE id = ?').run(id)
+      return send(res, 200, { ok: true })
+    }
+
+    // Public brand list for the storefront (only brands that are switched on).
+    if (req.method === 'GET' && path === '/api/brands') {
+      const rows = db.prepare('SELECT * FROM brands WHERE active = 1 ORDER BY sort, id').all()
+      return send(res, 200, rows.map((b) => ({ id: b.id, name: pickLang(b.names, lang), logo: b.logo || '' })))
     }
 
     // ---- Admin: image upload (base64 JSON keeps the server dependency-free) ----

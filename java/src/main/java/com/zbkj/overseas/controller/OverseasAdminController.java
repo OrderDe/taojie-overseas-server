@@ -3,11 +3,14 @@ package com.zbkj.overseas.controller;
 import com.zbkj.overseas.common.exception.OverseasException;
 import com.zbkj.overseas.common.result.CommonResult;
 import com.zbkj.overseas.common.result.CommonResultCode;
+import com.zbkj.overseas.request.BrandSaveRequest;
 import com.zbkj.overseas.request.CategorySaveRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
 import com.zbkj.overseas.request.UploadRequest;
+import com.zbkj.overseas.response.AdminBrandResponse;
 import com.zbkj.overseas.response.AdminCategoryResponse;
 import com.zbkj.overseas.response.AdminProductResponse;
+import com.zbkj.overseas.service.OverseasBrandService;
 import com.zbkj.overseas.service.OverseasCategoryService;
 import com.zbkj.overseas.service.OverseasProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,6 +50,9 @@ public class OverseasAdminController {
 
     @Autowired
     private OverseasCategoryService categoryService;
+
+    @Autowired
+    private OverseasBrandService brandService;
 
     @Value("${overseas.upload-dir:./data/uploads}")
     private String uploadDir;
@@ -104,6 +110,34 @@ public class OverseasAdminController {
     @DeleteMapping("/categories/{id}")
     public CommonResult<Map<String, Object>> deleteCategory(@PathVariable String id) {
         categoryService.deleteForAdmin(id);
+        return CommonResult.success(Map.of("ok", true));
+    }
+
+    // ---- brands ----
+
+    @Operation(summary = "管理端：全部品牌")
+    @GetMapping("/brands")
+    public CommonResult<List<AdminBrandResponse>> brands() {
+        return CommonResult.success(brandService.listForAdmin());
+    }
+
+    @Operation(summary = "管理端：新建品牌")
+    @PostMapping("/brands")
+    public CommonResult<AdminBrandResponse> createBrand(@RequestBody BrandSaveRequest request) {
+        return CommonResult.success(brandService.saveForAdmin(request, null));
+    }
+
+    @Operation(summary = "管理端：修改品牌")
+    @PutMapping("/brands/{id}")
+    public CommonResult<AdminBrandResponse> updateBrand(@PathVariable String id,
+                                                        @RequestBody BrandSaveRequest request) {
+        return CommonResult.success(brandService.saveForAdmin(request, id));
+    }
+
+    @Operation(summary = "管理端：删除品牌（下有商品时拒绝）")
+    @DeleteMapping("/brands/{id}")
+    public CommonResult<Map<String, Object>> deleteBrand(@PathVariable String id) {
+        brandService.deleteForAdmin(id);
         return CommonResult.success(Map.of("ok", true));
     }
 

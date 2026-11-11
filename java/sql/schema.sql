@@ -18,10 +18,22 @@ CREATE TABLE IF NOT EXISTS eb_overseas_category (
     PRIMARY KEY (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外商品分类';
 
+CREATE TABLE IF NOT EXISTS eb_overseas_brand (
+    id          VARCHAR(64)  NOT NULL COMMENT '品牌 id（如 kapci）',
+    names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,"es":..,"fr":..,"pt":..}',
+    logo        VARCHAR(1024)    NULL COMMENT '品牌 logo 地址',
+    sort        INT          NOT NULL DEFAULT 0,
+    is_show     TINYINT(1)   NOT NULL DEFAULT 1,
+    create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外商品品牌';
+
 CREATE TABLE IF NOT EXISTS eb_overseas_product (
     id          BIGINT       NOT NULL AUTO_INCREMENT,
     source_id   VARCHAR(64)  NOT NULL COMMENT 'tjmall 商品 id（同步 upsert 键）',
     category_id VARCHAR(64)  NOT NULL,
+    brand_id    VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '品牌 id（eb_overseas_brand.id），空 = 无品牌',
     names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,...}',
     price       DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '美元价',
     ot_price    DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '美元原价',

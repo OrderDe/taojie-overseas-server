@@ -30,6 +30,7 @@ Public (no login — the overseas showcase is for anonymous visitors):
 | `GET /api/products/:id?lang=` | Product detail |
 | `GET /api/keywords` | Search hot words |
 | `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |
+| `GET /api/brands?lang=` | Active brands (products reference them by `brandId`) |
 | `POST /api/rfq` | Submit an inquiry `{name, contact, product, qty, message}` — stored as a lead (rate-limited per IP) |
 
 Admin auth: log in with a username + password — `POST /api/admin/login`
@@ -50,6 +51,7 @@ people under 用户与角色.
 | `PUT /api/admin/site-config` (perm `config`) | Update site config (only known fields are accepted) |
 | `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` (perm `products`) | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
 | `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` (perm `categories`) | Category management (delete refuses while products use it) |
+| `GET\|POST /api/admin/brands`, `PUT\|DELETE /api/admin/brands/:id` (perm `products`) | Brand management, mirroring plat's brand module (multi-language names, logo; delete refuses while products use it; saving a product with an unknown `brandId` is rejected) |
 | `POST /api/admin/upload` (perm `products`) | Image upload as `{filename, dataBase64}` → `{url}` (png/jpg/webp/gif, ≤ 6 MB; files land in `data/uploads/`, served at `/uploads/`) |
 | `GET\|POST /api/admin/users`, `PUT\|DELETE /api/admin/users/:id` (perm `users`) | Admin accounts (create, assign role, enable/disable, reset password; last super admin is protected) |
 | `GET\|POST /api/admin/roles`, `PUT\|DELETE /api/admin/roles/:id`, `GET /api/admin/permissions` (perm `users`) | Roles = menu-permission sets (built-in super role is locked to all permissions) |

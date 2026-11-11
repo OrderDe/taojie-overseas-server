@@ -3,8 +3,10 @@ package com.zbkj.overseas.controller;
 import com.zbkj.overseas.common.page.CommonPage;
 import com.zbkj.overseas.common.result.CommonResult;
 import com.zbkj.overseas.request.ProductSearchRequest;
+import com.zbkj.overseas.response.BrandResponse;
 import com.zbkj.overseas.response.CategoryResponse;
 import com.zbkj.overseas.response.ProductResponse;
+import com.zbkj.overseas.service.OverseasBrandService;
 import com.zbkj.overseas.service.OverseasCategoryService;
 import com.zbkj.overseas.service.OverseasProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +37,9 @@ public class OverseasProductController {
     @Autowired
     private OverseasCategoryService categoryService;
 
+    @Autowired
+    private OverseasBrandService brandService;
+
     @PermitAll
     @Operation(summary = "健康检查")
     @GetMapping("/health")
@@ -48,6 +53,14 @@ public class OverseasProductController {
     public CommonResult<List<CategoryResponse>> categories(
             @RequestParam(name = "lang", defaultValue = "en") String lang) {
         return CommonResult.success(categoryService.listForFront(lang));
+    }
+
+    @PermitAll
+    @Operation(summary = "获取海外品牌列表（仅启用的）")
+    @GetMapping("/brands")
+    public CommonResult<List<BrandResponse>> brands(
+            @RequestParam(name = "lang", defaultValue = "en") String lang) {
+        return CommonResult.success(brandService.listForFront(lang));
     }
 
     @PermitAll

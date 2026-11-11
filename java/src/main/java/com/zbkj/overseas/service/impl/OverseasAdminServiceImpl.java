@@ -182,7 +182,8 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
                 || path.equals("/api/admin/permissions")) {
             return "users";
         }
-        if (path.startsWith("/api/admin/products") || path.equals("/api/admin/upload")) {
+        if (path.startsWith("/api/admin/products") || path.startsWith("/api/admin/brands")
+                || path.equals("/api/admin/upload")) {
             return "products";
         }
         if (path.startsWith("/api/admin/categories")) {

@@ -8,13 +8,18 @@ import com.zbkj.overseas.common.exception.OverseasException;
 import com.zbkj.overseas.common.page.CommonPage;
 import com.zbkj.overseas.common.result.CommonResultCode;
 import com.zbkj.overseas.common.result.OverseasResultCode;
+import com.zbkj.overseas.dao.OverseasBrandDao;
+import com.zbkj.overseas.dao.OverseasCategoryDao;
 import com.zbkj.overseas.dao.OverseasProductDao;
+import com.zbkj.overseas.model.OverseasBrand;
+import com.zbkj.overseas.model.OverseasCategory;
 import com.zbkj.overseas.model.OverseasProduct;
 import com.zbkj.overseas.request.ProductSaveRequest;
 import com.zbkj.overseas.request.ProductSearchRequest;
 import com.zbkj.overseas.response.AdminProductResponse;
 import com.zbkj.overseas.response.ProductResponse;
 import com.zbkj.overseas.service.OverseasProductService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -35,6 +40,12 @@ import java.util.stream.Collectors;
 @Service
 public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, OverseasProduct>
         implements OverseasProductService {
+
+    @Autowired
+    private OverseasBrandDao brandDao;
+
+    @Autowired
+    private OverseasCategoryDao categoryDao;
 
     @Override
     public CommonPage<ProductResponse> pageForFront(ProductSearchRequest request) {
@@ -106,6 +117,19 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         ProductResponse r = new ProductResponse();
         r.setId(p.getId());
         r.setCategoryId(p.getCategoryId());
+        if (StrUtil.isNotBlank(p.getCategoryId())) {
+            OverseasCategory cat = categoryDao.selectById(p.getCategoryId());
+            r.setCategory(cat == null ? "" : LangUtil.pick(cat.getNames(), lang));
+        } else {
+            r.setCategory("");
+        }
+        r.setBrandId(StrUtil.blankToDefault(p.getBrandId(), ""));
+        if (StrUtil.isNotBlank(p.getBrandId())) {
+            OverseasBrand brand = brandDao.selectById(p.getBrandId());
+            r.setBrand(brand == null ? "" : LangUtil.pick(brand.getNames(), lang));
+        } else {
+            r.setBrand("");
+        }
         r.setName(LangUtil.pick(p.getNames(), lang));
         r.setPrice(p.getPrice());
         r.setOtPrice(p.getOtPrice());
@@ -135,6 +159,10 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         if (names == null || (StrUtil.isBlank(names.get("en")) && StrUtil.isBlank(names.get("zh")))) {
             throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "商品英文名/中文名至少填一个");
         }
+        String brandId = StrUtil.blankToDefault(StrUtil.trim(request.getBrandId()), "");
+        if (!brandId.isEmpty() && brandDao.selectById(brandId) == null) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "品牌不存在");
+        }
         OverseasProduct p;
         if (id == null) {
             p = new OverseasProduct();
@@ -152,6 +180,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
             }
         }
         p.setCategoryId(StrUtil.blankToDefault(request.getCategoryId(), ""));
+        p.setBrandId(brandId);
         p.setNames(JSONUtil.toJsonStr(names));
         p.setPrice(request.getPrice() == null ? BigDecimal.ZERO : request.getPrice());
         p.setOtPrice(request.getOtPrice() == null ? BigDecimal.ZERO : request.getOtPrice());
@@ -180,6 +209,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setId(p.getId());
         r.setSourceId(p.getSourceId());
         r.setCategoryId(p.getCategoryId());
+        r.setBrandId(StrUtil.blankToDefault(p.getBrandId(), ""));
         r.setNames(LangUtil.toStringMap(p.getNames()));
         r.setPrice(p.getPrice());
         r.setOtPrice(p.getOtPrice());

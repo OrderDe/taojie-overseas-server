@@ -23,6 +23,14 @@ public class ProductResponse implements Serializable {
 
     private String categoryId;
 
+    @Schema(description = "按请求语言解析后的分类名")
+    private String category;
+
+    private String brandId;
+
+    @Schema(description = "按请求语言解析后的品牌名")
+    private String brand;
+
     @Schema(description = "按请求语言解析后的商品名")
     private String name;
 

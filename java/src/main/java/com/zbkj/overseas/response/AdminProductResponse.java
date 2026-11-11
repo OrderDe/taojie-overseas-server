@@ -23,6 +23,8 @@ public class AdminProductResponse implements Serializable {
 
     private String categoryId;
 
+    private String brandId;
+
     @Schema(description = "多语言商品名 {en, zh, es, fr, pt}")
     private Map<String, String> names;
 

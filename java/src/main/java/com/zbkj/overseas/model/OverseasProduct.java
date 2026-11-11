@@ -32,6 +32,9 @@ public class OverseasProduct implements Serializable {
 
     private String categoryId;
 
+    /** Brand id (eb_overseas_brand.id); blank = no brand. */
+    private String brandId;
+
     /** JSON map lang -> name */
     private String names;
 

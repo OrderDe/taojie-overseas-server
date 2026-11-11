@@ -59,6 +59,9 @@ GET|POST /api/admin/products        商品列表（管理版）/ 新建商品（
 PUT|DELETE /api/admin/products/{id} 修改 / 删除商品
 GET|POST /api/admin/categories      分类列表（管理版）/ 新建分类（需 categories 权限）
 PUT|DELETE /api/admin/categories/{id} 修改 / 删除分类（下有商品时拒绝删除）
+GET  /api/brands                     前台品牌列表 [{id, name, logo}]
+GET|POST /api/admin/brands          品牌列表（管理版）/ 新建品牌（需 products 权限）
+PUT|DELETE /api/admin/brands/{id}   修改 / 删除品牌（下有商品时拒绝删除；存量库需跑 sql/admin-brands.sql）
 POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}（需 products 权限）
 GET|POST /api/admin/users           后台用户列表 / 新建（需 users 权限）
 PUT|DELETE /api/admin/users/{id}    编辑（可重置密码）/ 删除（最后一个超级管理员受保护）
