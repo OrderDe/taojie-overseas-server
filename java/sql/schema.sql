@@ -61,3 +61,44 @@ CREATE TABLE IF NOT EXISTS eb_overseas_site_config (
     update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外站点配置（键值表，同 eb_system_config 模式）';
+
+-- 后台账号体系（用户登录 + 角色菜单权限）。已部署的库改跑 sql/admin-rbac.sql。
+-- 角色 permissions 是菜单权限 key 的 JSON 数组：products/categories/rfq/config/users，["*"] = 全部。
+-- 初始管理员账号不写在这里：应用启动时若用户表为空，用 ADMIN_TOKEN 作为密码创建 admin 账号。
+CREATE TABLE IF NOT EXISTS eb_overseas_admin_role (
+    id          BIGINT       NOT NULL AUTO_INCREMENT,
+    name        VARCHAR(64)  NOT NULL,
+    permissions JSON         NOT NULL COMMENT '菜单权限数组，如 ["products","rfq"] 或 ["*"]',
+    builtin     TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '内置角色（超级管理员）不可删',
+    create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_name (name)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外后台角色';
+
+CREATE TABLE IF NOT EXISTS eb_overseas_admin_user (
+    id            BIGINT       NOT NULL AUTO_INCREMENT,
+    username      VARCHAR(64)  NOT NULL,
+    password_hash VARCHAR(255) NOT NULL COMMENT 'PBKDF2: pbkdf2:迭代:盐:哈希',
+    display_name  VARCHAR(64)      NULL,
+    role_id       BIGINT       NOT NULL,
+    active        TINYINT(1)   NOT NULL DEFAULT 1,
+    create_time   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_username (username),
+    KEY idx_role (role_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外后台用户';
+
+CREATE TABLE IF NOT EXISTS eb_overseas_admin_session (
+    token       VARCHAR(128) NOT NULL,
+    user_id     BIGINT       NOT NULL,
+    expires_at  BIGINT       NOT NULL COMMENT '毫秒时间戳',
+    PRIMARY KEY (token),
+    KEY idx_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外后台登录会话';
+
+INSERT IGNORE INTO eb_overseas_admin_role (name, permissions, builtin) VALUES
+    ('超级管理员', '["*"]', 1),
+    ('运营', '["products", "categories", "rfq", "config"]', 0),
+    ('外贸员', '["rfq"]', 0);

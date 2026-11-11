@@ -41,21 +41,36 @@ GET  /api/site-config
 POST /api/rfq            { name*, contact*, company, country, productName, quantity, message }
 ```
 
-管理（请求头 `x-admin-token: <ADMIN_TOKEN>`，拦截器 `AdminTokenInterceptor`）：
+管理（拦截器 `AdminTokenInterceptor`）：先 `POST /api/admin/login` 用账号+密码
+登录拿到会话令牌，之后请求头带 `x-admin-token: <会话令牌>`。每个账号有角色，
+角色带菜单权限（products/categories/rfq/config/users），接口按区域校验、
+没有权限返回 403。`ADMIN_TOKEN` 本身仍可作应急超级令牌（全部权限）。
+首次启动种子三个角色（超级管理员/运营/外贸员）；用户表为空时按 `ADMIN_TOKEN`
+生成初始账号 **admin**（密码就是该令牌），登录后在「用户与角色」里改密码、加人。
+已部署的库先跑 `sql/admin-rbac.sql` 补上三张账号表。
 
 ```
-GET  /api/admin/rfq                 最新 200 条询价
-PUT  /api/admin/site-config         保存站点配置（字段同 pc-config.json）
-GET|POST /api/admin/products        商品列表（管理版）/ 新建商品
+POST /api/admin/login               登录（免拦截）{username, password} -> {token, user}
+POST /api/admin/logout              退出（作废会话）
+GET  /api/admin/me                  当前账号与菜单权限
+GET  /api/admin/rfq                 最新 200 条询价（需 rfq 权限）
+PUT  /api/admin/site-config         保存站点配置（需 config 权限）
+GET|POST /api/admin/products        商品列表（管理版）/ 新建商品（需 products 权限）
 PUT|DELETE /api/admin/products/{id} 修改 / 删除商品
-GET|POST /api/admin/categories      分类列表（管理版）/ 新建分类
+GET|POST /api/admin/categories      分类列表（管理版）/ 新建分类（需 categories 权限）
 PUT|DELETE /api/admin/categories/{id} 修改 / 删除分类（下有商品时拒绝删除）
-POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}
+POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}（需 products 权限）
+GET|POST /api/admin/users           后台用户列表 / 新建（需 users 权限）
+PUT|DELETE /api/admin/users/{id}    编辑（可重置密码）/ 删除（最后一个超级管理员受保护）
+GET|POST /api/admin/roles           角色列表 / 新建（需 users 权限）
+PUT|DELETE /api/admin/roles/{id}    编辑 / 删除（内置角色、仍有用户的角色不可删）
+GET  /api/admin/permissions         菜单权限定义（角色编辑用）
 ```
 
 **后台管理界面**：启动后打开 **`/admin`**（静态页在 `src/main/resources/static/admin/`，
-与 Node 版共用同一套界面和接口契约），用 `ADMIN_TOKEN` 登录，含商品管理、
-分类管理、询价列表、站点配置四个页签。上传的图片存放在 `overseas.upload-dir`
+与 Node 版共用同一套界面和接口契约），用账号密码登录（初始账号 admin / ADMIN_TOKEN），
+页签按角色权限显示：商品管理、分类管理、询价列表、站点配置、用户与角色。
+上传的图片存放在 `overseas.upload-dir`
 （默认 `./data/uploads`，可用环境变量 `UPLOAD_DIR` 覆盖），经 `/uploads/**` 访问。
 
 启动后 Swagger 文档在 `/swagger-ui.html`。

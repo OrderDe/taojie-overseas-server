@@ -13,10 +13,13 @@
   <div class="login-card">
     <h1>淘街海外商城</h1>
     <p class="sub">后台管理 · Taojie Overseas Admin</p>
-    <label>管理员令牌（启动后端时设置的环境变量 ADMIN_TOKEN）</label>
-    <input id="tokenInput" type="password" placeholder="输入令牌后进入后台" autocomplete="off">
-    <button id="loginBtn" class="btn primary big">进入后台</button>
+    <label>账号</label>
+    <input id="loginUser" type="text" placeholder="用户名" autocomplete="username">
+    <label>密码</label>
+    <input id="loginPass" type="password" placeholder="密码" autocomplete="current-password">
+    <button id="loginBtn" class="btn primary big">登录</button>
     <p id="loginErr" class="err"></p>
+    <p class="hint">初始账号 <b>admin</b>，密码就是后端启动时设的 ADMIN_TOKEN。登录后在「用户与角色」里改密码、加账号、分角色。</p>
   </div>
 </div>
 
@@ -24,7 +27,7 @@
 <div id="appView" hidden>
   <header class="topbar">
     <div class="brand">淘街海外商城 <span>后台管理</span></div>
-    <button id="logoutBtn" class="btn ghost">退出</button>
+    <div><span id="whoami" class="who"></span><button id="logoutBtn" class="btn ghost">退出</button></div>
   </header>
 
   <nav class="tabs">
@@ -32,6 +35,7 @@
     <button data-tab="categories" class="tab">分类管理</button>
     <button data-tab="rfq" class="tab">询价列表</button>
     <button data-tab="config" class="tab">站点配置</button>
+    <button data-tab="users" class="tab">用户与角色</button>
   </nav>
 
   <main>
@@ -155,6 +159,47 @@
           <span class="hint">保存后前台刷新即生效（访客自己切换过的主题/语言优先）。</span>
         </div>
       </form>
+    </section>
+
+    <!-- 用户与角色 -->
+    <section id="tab-users" hidden>
+      <form id="uForm" class="panel">
+        <h2 id="uFormTitle">新建用户</h2>
+        <div class="grid">
+          <label>账号<input id="u_username" placeholder="登录用户名"></label>
+          <label>显示名<input id="u_display" placeholder="如 小王"></label>
+          <label>密码<input id="u_password" type="password" placeholder="新建必填；编辑时留空 = 不改密码"></label>
+          <label>角色<select id="u_role"></select></label>
+        </div>
+        <label class="check"><input id="u_active" type="checkbox" checked> 启用</label>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存用户</button>
+          <button type="button" id="uReset" class="btn">清空（新建）</button>
+          <span id="uFormErr" class="err"></span>
+        </div>
+      </form>
+      <table class="tbl">
+        <thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="uRows"></tbody>
+      </table>
+
+      <form id="rForm" class="panel" style="margin-top:28px">
+        <h2 id="rFormTitle">新建角色</h2>
+        <div class="grid">
+          <label>角色名<input id="r_name" placeholder="如 运营"></label>
+        </div>
+        <p class="hint" style="margin:14px 0 4px">菜单权限：勾选的页签，这个角色的用户登录后才能看到、才能操作。</p>
+        <div id="r_perms" class="permgrid"></div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存角色</button>
+          <button type="button" id="rReset" class="btn">清空（新建）</button>
+          <span id="rFormErr" class="err"></span>
+        </div>
+      </form>
+      <table class="tbl">
+        <thead><tr><th>角色</th><th>菜单权限</th><th>用户数</th><th>操作</th></tr></thead>
+        <tbody id="rRows"></tbody>
+      </table>
     </section>
   </main>
 </div>

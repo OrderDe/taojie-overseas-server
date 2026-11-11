@@ -32,25 +32,39 @@ Public (no login — the overseas showcase is for anonymous visitors):
 | `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |
 | `POST /api/rfq` | Submit an inquiry `{name, contact, product, qty, message}` — stored as a lead (rate-limited per IP) |
 
-Admin (header `x-admin-token: $ADMIN_TOKEN`):
+Admin auth: log in with a username + password — `POST /api/admin/login`
+returns a session token that is then sent as the `x-admin-token` header.
+Each account has a role; roles carry **menu permissions** (`products` /
+`categories` / `rfq` / `config` / `users`) which the API enforces per area
+(403 when missing) and the UI uses to show/hide tabs. The `ADMIN_TOKEN`
+itself still works as a break-glass root credential with all permissions.
+First boot seeds three roles （超级管理员 / 运营 / 外贸员） and, while the user
+table is empty, an initial account **admin** whose password is the
+`ADMIN_TOKEN` value — log in with it, then change the password and add
+people under 用户与角色.
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/admin/rfq` | Latest 200 RFQ leads |
-| `PUT /api/admin/site-config` | Update site config (only known fields are accepted) |
-| `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
-| `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` | Category management (delete refuses while products use it) |
-| `POST /api/admin/upload` | Image upload as `{filename, dataBase64}` → `{url}` (png/jpg/webp/gif, ≤ 6 MB; files land in `data/uploads/`, served at `/uploads/`) |
+| `POST /api/admin/login` / `POST /api/admin/logout` / `GET /api/admin/me` | Login (public), logout, current account + permissions |
+| `GET /api/admin/rfq` (perm `rfq`) | Latest 200 RFQ leads |
+| `PUT /api/admin/site-config` (perm `config`) | Update site config (only known fields are accepted) |
+| `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` (perm `products`) | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
+| `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` (perm `categories`) | Category management (delete refuses while products use it) |
+| `POST /api/admin/upload` (perm `products`) | Image upload as `{filename, dataBase64}` → `{url}` (png/jpg/webp/gif, ≤ 6 MB; files land in `data/uploads/`, served at `/uploads/`) |
+| `GET\|POST /api/admin/users`, `PUT\|DELETE /api/admin/users/:id` (perm `users`) | Admin accounts (create, assign role, enable/disable, reset password; last super admin is protected) |
+| `GET\|POST /api/admin/roles`, `PUT\|DELETE /api/admin/roles/:id`, `GET /api/admin/permissions` (perm `users`) | Roles = menu-permission sets (built-in super role is locked to all permissions) |
 
 ## Admin UI （后台管理界面）
 
 Open **`http://localhost:3100/admin`** — a small built-in management page
-(static files in `admin/`, no build step). Log in with the `ADMIN_TOKEN`
-value; the token is kept in sessionStorage and sent as `x-admin-token`.
-Tabs: 商品管理 (products), 分类管理 (categories), 询价列表 (RFQs), 站点配置
-(site config). The **Java implementation serves the same UI and the same
-admin API**, so day-to-day management looks identical whichever backend
-is deployed.
+(static files in `admin/`, no build step). Log in with a username and
+password (initial account: **admin** / the `ADMIN_TOKEN` value); the
+session token is kept in sessionStorage and sent as `x-admin-token`.
+Tabs follow the account's role: 商品管理 (products), 分类管理 (categories),
+询价列表 (RFQs), 站点配置 (site config), 用户与角色 (users & roles) — a tab
+the role does not include is not shown at all. The **Java implementation
+serves the same UI and the same admin API**, so day-to-day management
+looks identical whichever backend is deployed.
 
 New RFQs are also POSTed as JSON to `RFQ_WEBHOOK_URL` when set (mail /
 WhatsApp notification gateway hook).

@@ -6,10 +6,16 @@
 const $ = (id) => document.getElementById(id)
 const state = {
   token: sessionStorage.getItem('tj_admin_token') || '',
+  user: null,
   products: [],
   categories: [],
+  users: [],
+  roles: [],
+  permDefs: [],
   editingProduct: null,
-  editingCategory: null
+  editingCategory: null,
+  editingUser: null,
+  editingRole: null
 }
 
 function toast(msg) {
@@ -43,23 +49,45 @@ const catName = (id) => {
 
 // ---------------- login ----------------
 
-async function tryLogin(token) {
-  state.token = token
-  await api('/api/admin/products')
-  sessionStorage.setItem('tj_admin_token', token)
+const can = (perm) => !!state.user && (state.user.permissions.includes('*') || state.user.permissions.includes(perm))
+
+async function enterApp() {
   $('loginView').hidden = true
   $('appView').hidden = false
+  $('whoami').textContent = `${state.user.displayName || state.user.username} · ${state.user.roleName || ''}`
+  applyPermissions()
   await loadAll()
 }
 
+// Tabs follow the role's menu permissions: no permission, no tab.
+function applyPermissions() {
+  const tabPerm = { products: 'products', categories: 'categories', rfq: 'rfq', config: 'config', users: 'users' }
+  let firstVisible = null
+  document.querySelectorAll('.tab').forEach((btn) => {
+    const visible = can(tabPerm[btn.dataset.tab])
+    btn.hidden = !visible
+    if (visible && !firstVisible) firstVisible = btn
+  })
+  const active = document.querySelector('.tab.active')
+  if (firstVisible && (!active || active.hidden)) firstVisible.click()
+}
+
 $('loginBtn').addEventListener('click', async () => {
-  const token = $('tokenInput').value.trim()
+  const username = $('loginUser').value.trim()
+  const password = $('loginPass').value
   $('loginErr').textContent = ''
-  if (!token) { $('loginErr').textContent = '先输入管理员令牌'; return }
-  try { await tryLogin(token) } catch (e) { $('loginErr').textContent = '令牌不对，或后端没启动 / 没设置 ADMIN_TOKEN' }
+  if (!username || !password) { $('loginErr').textContent = '输入账号和密码'; return }
+  try {
+    const out = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+    state.token = out.token
+    state.user = out.user
+    sessionStorage.setItem('tj_admin_token', state.token)
+    await enterApp()
+  } catch (e) { $('loginErr').textContent = '账号或密码不对，或后端没启动' }
 })
-$('tokenInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click() })
-$('logoutBtn').addEventListener('click', () => {
+$('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click() })
+$('logoutBtn').addEventListener('click', async () => {
+  try { await api('/api/admin/logout', { method: 'POST' }) } catch { /* session already gone */ }
   sessionStorage.removeItem('tj_admin_token')
   location.reload()
 })
@@ -69,21 +97,27 @@ $('logoutBtn').addEventListener('click', () => {
 document.querySelectorAll('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn))
-    for (const name of ['products', 'categories', 'rfq', 'config']) {
+    for (const name of ['products', 'categories', 'rfq', 'config', 'users']) {
       $('tab-' + name).hidden = name !== btn.dataset.tab
     }
     if (btn.dataset.tab === 'rfq') loadRfq()
+    if (btn.dataset.tab === 'users') loadUsers()
   })
 })
 
 // ---------------- data ----------------
 
 async function loadAll() {
-  state.categories = await api('/api/admin/categories')
-  state.products = await api('/api/admin/products')
-  renderCategoryOptions()
-  renderProducts()
-  renderCategories()
+  // Only fetch what the role may see — the API would 403 the rest anyway.
+  if (can('categories') || can('products')) {
+    try { state.categories = await api('/api/admin/categories') } catch { /* keep empty */ }
+  }
+  if (can('products')) {
+    try { state.products = await api('/api/admin/products') } catch { /* keep empty */ }
+    renderCategoryOptions()
+    renderProducts()
+  }
+  if (can('categories')) renderCategories()
   const cfg = await api('/api/site-config')
   fillConfig(cfg)
 }
@@ -362,10 +396,179 @@ $('cfgForm').addEventListener('submit', async (e) => {
   } catch (err) { $('cfgErr').textContent = err.message }
 })
 
+// ---------------- users & roles ----------------
+
+async function loadUsers() {
+  try {
+    state.permDefs = await api('/api/admin/permissions')
+    state.roles = await api('/api/admin/roles')
+    state.users = await api('/api/admin/users')
+    renderRoleOptions()
+    renderUsers()
+    renderRoles()
+    if (!state.editingRole) renderPermChecks([])
+  } catch (e) { alert(e.message) }
+}
+
+function renderRoleOptions() {
+  $('u_role').innerHTML = state.roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')
+}
+
+function renderUsers() {
+  $('uRows').innerHTML = state.users.map((u) => `
+    <tr>
+      <td><b>${esc(u.username)}</b></td>
+      <td>${esc(u.displayName || '')}</td>
+      <td>${esc(u.roleName || '')}</td>
+      <td>${u.active ? '<span class="on">启用</span>' : '<span class="off">禁用</span>'}</td>
+      <td class="ops">
+        <button class="btn small" data-uedit="${u.id}">编辑</button>
+        <button class="btn small danger" data-udel="${u.id}">删除</button>
+      </td>
+    </tr>`).join('')
+  $('uRows').querySelectorAll('[data-uedit]').forEach((b) => b.addEventListener('click', () => {
+    const u = state.users.find((x) => x.id === Number(b.dataset.uedit))
+    if (!u) return
+    state.editingUser = u.id
+    $('uFormTitle').textContent = `编辑用户 ${u.username}`
+    $('u_username').value = u.username
+    $('u_username').disabled = true
+    $('u_display').value = u.displayName || ''
+    $('u_password').value = ''
+    $('u_role').value = u.roleId
+    $('u_active').checked = !!u.active
+    $('uFormErr').textContent = ''
+  }))
+  $('uRows').querySelectorAll('[data-udel]').forEach((b) => b.addEventListener('click', async () => {
+    const u = state.users.find((x) => x.id === Number(b.dataset.udel))
+    if (!confirm(`确定删除用户「${u?.username}」吗？`)) return
+    try {
+      await api(`/api/admin/users/${b.dataset.udel}`, { method: 'DELETE' })
+      toast('用户已删除')
+      await loadUsers()
+    } catch (e) { alert(e.message) }
+  }))
+}
+
+$('uReset').addEventListener('click', () => {
+  state.editingUser = null
+  $('uFormTitle').textContent = '新建用户'
+  $('uForm').reset()
+  $('u_username').disabled = false
+  $('u_active').checked = true
+  $('uFormErr').textContent = ''
+})
+
+$('uForm').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  $('uFormErr').textContent = ''
+  const payload = {
+    displayName: $('u_display').value.trim(),
+    roleId: Number($('u_role').value),
+    active: $('u_active').checked
+  }
+  const pw = $('u_password').value
+  if (pw) payload.password = pw
+  try {
+    if (state.editingUser) {
+      await api(`/api/admin/users/${state.editingUser}`, { method: 'PUT', body: JSON.stringify(payload) })
+      toast('用户已保存')
+    } else {
+      payload.username = $('u_username').value.trim()
+      if (!payload.password) { $('uFormErr').textContent = '新建用户必须设置密码'; return }
+      await api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) })
+      toast('用户已新建')
+    }
+    $('uReset').click()
+    await loadUsers()
+  } catch (err) { $('uFormErr').textContent = err.message }
+})
+
+function permLabel(key) {
+  if (key === '*') return '全部权限'
+  const def = state.permDefs.find((p) => p.key === key)
+  return def ? def.label : key
+}
+
+function renderPermChecks(selected) {
+  const sel = selected || []
+  const star = `<label class="check"><input type="checkbox" value="*" ${sel.includes('*') ? 'checked' : ''}> 全部权限（超级管理员）</label>`
+  $('r_perms').innerHTML = star + state.permDefs.map((p) =>
+    `<label class="check"><input type="checkbox" value="${p.key}" ${sel.includes(p.key) ? 'checked' : ''}> ${esc(p.label)}</label>`).join('')
+}
+function collectPerms() {
+  return [...$('r_perms').querySelectorAll('input:checked')].map((i) => i.value)
+}
+
+function renderRoles() {
+  $('rRows').innerHTML = state.roles.map((r) => `
+    <tr>
+      <td><b>${esc(r.name)}</b>${r.builtin ? ' <span class="dim">内置</span>' : ''}</td>
+      <td>${r.permissions.map(permLabel).join('、') || '-'}</td>
+      <td>${r.userCount}</td>
+      <td class="ops">
+        <button class="btn small" data-redit="${r.id}">编辑</button>
+        <button class="btn small danger" data-rdel="${r.id}">删除</button>
+      </td>
+    </tr>`).join('')
+  $('rRows').querySelectorAll('[data-redit]').forEach((b) => b.addEventListener('click', () => {
+    const r = state.roles.find((x) => x.id === Number(b.dataset.redit))
+    if (!r) return
+    state.editingRole = r.id
+    $('rFormTitle').textContent = `编辑角色 ${r.name}`
+    $('r_name').value = r.name
+    renderPermChecks(r.permissions)
+    if (r.builtin) {
+      $('r_perms').querySelectorAll('input').forEach((i) => { i.disabled = true })
+      $('rFormErr').textContent = '内置超级管理员角色的权限固定为全部，不能改'
+    } else {
+      $('rFormErr').textContent = ''
+    }
+  }))
+  $('rRows').querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', async () => {
+    const r = state.roles.find((x) => x.id === Number(b.dataset.rdel))
+    if (!confirm(`确定删除角色「${r?.name}」吗？`)) return
+    try {
+      await api(`/api/admin/roles/${b.dataset.rdel}`, { method: 'DELETE' })
+      toast('角色已删除')
+      $('rReset').click()
+      await loadUsers()
+    } catch (e) { alert(e.message) }
+  }))
+}
+
+$('rReset').addEventListener('click', () => {
+  state.editingRole = null
+  $('rFormTitle').textContent = '新建角色'
+  $('rForm').reset()
+  renderPermChecks([])
+  $('rFormErr').textContent = ''
+})
+
+$('rForm').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  $('rFormErr').textContent = ''
+  const payload = { name: $('r_name').value.trim(), permissions: collectPerms() }
+  try {
+    if (state.editingRole) {
+      await api(`/api/admin/roles/${state.editingRole}`, { method: 'PUT', body: JSON.stringify(payload) })
+      toast('角色已保存')
+    } else {
+      await api('/api/admin/roles', { method: 'POST', body: JSON.stringify(payload) })
+      toast('角色已新建')
+    }
+    $('rReset').click()
+    await loadUsers()
+  } catch (err) { $('rFormErr').textContent = err.message }
+})
+
 // ---------------- boot ----------------
 
 if (state.token) {
-  tryLogin(state.token).catch(() => {
+  api('/api/admin/me').then((me) => {
+    state.user = me
+    return enterApp()
+  }).catch(() => {
     sessionStorage.removeItem('tj_admin_token')
     state.token = ''
   })

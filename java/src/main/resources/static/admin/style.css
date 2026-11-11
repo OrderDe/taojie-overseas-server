@@ -63,3 +63,6 @@ main { background: #fff; margin: 0 28px 28px; border-radius: 0 14px 14px 14px; p
 .empty { color: #8a8a9e; padding: 26px 0; text-align: center; }
 
 #toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #14142b; color: #fff; padding: 11px 22px; border-radius: 10px; font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.who { color: #a5a5c4; font-size: 14px; margin-right: 12px; }
+.permgrid { display: flex; gap: 4px 24px; flex-wrap: wrap; }
+.permgrid .check { margin-top: 8px; }

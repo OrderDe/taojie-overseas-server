@@ -11,8 +11,11 @@
 //   POST /api/rfq                      (lead capture, stored in SQLite)
 //   GET  /api/admin/rfq                (header: x-admin-token)
 //   PUT  /api/admin/site-config        (header: x-admin-token)
+//   POST /api/admin/login              (username+password -> session token)
 //   GET|POST|PUT|DELETE /api/admin/products[/:id]     (catalogue management)
 //   GET|POST|PUT|DELETE /api/admin/categories[/:id]   (category management)
+//   GET|POST|PUT|DELETE /api/admin/users[/:id]        (admin accounts)
+//   GET|POST|PUT|DELETE /api/admin/roles[/:id]        (roles = menu permissions)
 //   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url})
 //   GET  /admin                        (admin UI, static files in admin/)
 //   GET  /uploads/<file>               (uploaded product images)
@@ -23,6 +26,7 @@
 
 import { createServer } from 'node:http'
 import { DatabaseSync } from 'node:sqlite'
+import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, extname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -73,6 +77,26 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS site_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE IF NOT EXISTS admin_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    permissions TEXT NOT NULL DEFAULT '[]',
+    builtin INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    role_id INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
   );
 `)
 // Products gained a sort column after the first release; add it in place.
@@ -160,8 +184,108 @@ function readBody(req, limit = 1e6) {
   })
 }
 
+// ---- Admin accounts: users, roles (menu permissions), sessions ----
+// The shared ADMIN_TOKEN still works as a break-glass root credential. On
+// top of it there are real accounts: POST /api/admin/login checks a
+// username+password and issues a session token; each role carries menu
+// permissions (products / categories / rfq / config / users) which the API
+// enforces per area and the admin UI uses to show/hide tabs.
+const PERMISSIONS = [
+  { key: 'products', label: '商品管理' },
+  { key: 'categories', label: '分类管理' },
+  { key: 'rfq', label: '询价列表' },
+  { key: 'config', label: '站点配置' },
+  { key: 'users', label: '用户与角色' }
+]
+const ALL_PERMS = PERMISSIONS.map((p) => p.key)
+const SESSION_TTL = 7 * 24 * 3600 * 1000
+
+function hashPassword(password) {
+  const salt = randomBytes(16)
+  const hash = scryptSync(String(password), salt, 64)
+  return `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`
+}
+function verifyPassword(password, stored) {
+  const parts = String(stored || '').split(':')
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false
+  const expected = Buffer.from(parts[2], 'hex')
+  const actual = scryptSync(String(password), Buffer.from(parts[1], 'hex'), 64)
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+function seedAdminAccounts() {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM admin_roles').get()
+  if (n === 0) {
+    const ins = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, ?)')
+    ins.run('超级管理员', JSON.stringify(['*']), 1)
+    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'config']), 0)
+    ins.run('外贸员', JSON.stringify(['rfq']), 0)
+  }
+  const { n: userCount } = db.prepare('SELECT COUNT(*) AS n FROM admin_users').get()
+  if (userCount === 0 && ADMIN_TOKEN) {
+    const role = db.prepare("SELECT id FROM admin_roles WHERE name = '超级管理员'").get()
+    db.prepare('INSERT INTO admin_users (username, password_hash, display_name, role_id, active, created_at) VALUES (?, ?, ?, ?, 1, ?)')
+      .run('admin', hashPassword(ADMIN_TOKEN), '管理员', role.id, new Date().toISOString())
+    console.log('created initial admin account: admin (password = ADMIN_TOKEN)')
+  }
+}
+seedAdminAccounts()
+
+function hasPerm(perms, key) {
+  return perms.includes('*') || perms.includes(key)
+}
+function isSuperRole(roleId) {
+  const role = db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(roleId)
+  return role ? parseJsonCol(role.permissions, []).includes('*') : false
+}
+function otherSuperExists(excludeUserId) {
+  const rows = db.prepare('SELECT id, role_id FROM admin_users WHERE active = 1 AND id != ?').all(excludeUserId)
+  return rows.some((u) => isSuperRole(u.role_id))
+}
+
+// Resolve the caller from the x-admin-token header: the root ADMIN_TOKEN,
+// or a login session token. Returns the principal or null.
+function resolveAuth(req) {
+  const token = req.headers['x-admin-token']
+  if (!token) return null
+  if (ADMIN_TOKEN !== '' && token === ADMIN_TOKEN) {
+    return { userId: 0, username: 'root', displayName: '超级管理员（令牌）', roleName: '超级管理员', permissions: ['*'] }
+  }
+  const session = db.prepare('SELECT * FROM admin_sessions WHERE token = ?').get(token)
+  if (!session || session.expires_at < Date.now()) return null
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(session.user_id)
+  if (!user || user.active !== 1) return null
+  const role = db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(user.role_id)
+  return {
+    userId: user.id, username: user.username, displayName: user.display_name,
+    roleName: role ? role.name : '',
+    permissions: role ? parseJsonCol(role.permissions, []) : []
+  }
+}
+
 function isAdmin(req) {
-  return ADMIN_TOKEN !== '' && req.headers['x-admin-token'] === ADMIN_TOKEN
+  return resolveAuth(req) !== null
+}
+
+// Which permission a path needs (undefined = public login, null = any account).
+function requiredPerm(path) {
+  if (path === '/api/admin/login') return undefined
+  if (path === '/api/admin/me' || path === '/api/admin/logout') return null
+  if (path.startsWith('/api/admin/users') || path.startsWith('/api/admin/roles') || path === '/api/admin/permissions') return 'users'
+  if (path.startsWith('/api/admin/products') || path === '/api/admin/upload') return 'products'
+  if (path.startsWith('/api/admin/categories')) return 'categories'
+  if (path === '/api/admin/rfq') return 'rfq'
+  if (path === '/api/admin/site-config') return 'config'
+  return null
+}
+
+function adminUserOut(u) {
+  const role = db.prepare('SELECT name FROM admin_roles WHERE id = ?').get(u.role_id)
+  return { id: u.id, username: u.username, displayName: u.display_name, roleId: u.role_id, roleName: role ? role.name : '', active: u.active === 1, createdAt: u.created_at }
+}
+function adminRoleOut(r) {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM admin_users WHERE role_id = ?').get(r.id)
+  return { id: r.id, name: r.name, permissions: parseJsonCol(r.permissions, []), builtin: r.builtin === 1, userCount: n }
 }
 
 // Simple per-IP rate limit for POST /api/rfq: 5 per minute.
@@ -243,6 +367,20 @@ const server = createServer(async (req, res) => {
   const lang = LANGS.includes(url.searchParams.get('lang')) ? url.searchParams.get('lang') : 'en'
   try {
     if (req.method === 'OPTIONS') return send(res, 204, {})
+
+    // Admin gate: /api/admin/login is public; every other admin path needs
+    // a root token or a login session, plus the permission for that area.
+    if (path.startsWith('/api/admin/') && path !== '/api/admin/login') {
+      const auth = resolveAuth(req)
+      if (!auth) return send(res, 401, { error: 'login required' })
+      const need = requiredPerm(path)
+      // Product editors need the category list to fill the category dropdown.
+      const categoryReadByProduct = need === 'categories' && req.method === 'GET' && hasPerm(auth.permissions, 'products')
+      if (need && !categoryReadByProduct && !hasPerm(auth.permissions, need)) {
+        return send(res, 403, { error: `no permission: ${need}` })
+      }
+      req.adminAuth = auth
+    }
 
     if (req.method === 'GET' && path === '/api/health') {
       const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE active = 1').get()
@@ -434,6 +572,131 @@ const server = createServer(async (req, res) => {
       return send(res, 201, { url: `${proto}://${req.headers.host}/uploads/${name}` })
     }
 
+    // ---- Admin: login / session / current account ----
+    if (path === '/api/admin/login' && req.method === 'POST') {
+      const body = await readBody(req)
+      const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(String(body.username || '').trim())
+      if (!user || user.active !== 1 || !verifyPassword(body.password || '', user.password_hash)) {
+        return send(res, 401, { error: 'username or password incorrect' })
+      }
+      const token = randomBytes(32).toString('hex')
+      db.prepare('INSERT INTO admin_sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, Date.now() + SESSION_TTL)
+      const role = db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(user.role_id)
+      return send(res, 200, {
+        token,
+        user: {
+          username: user.username, displayName: user.display_name,
+          roleName: role ? role.name : '', permissions: role ? parseJsonCol(role.permissions, []) : []
+        }
+      })
+    }
+    if (path === '/api/admin/logout' && req.method === 'POST') {
+      db.prepare('DELETE FROM admin_sessions WHERE token = ?').run(req.headers['x-admin-token'] || '')
+      return send(res, 200, { ok: true })
+    }
+    if (path === '/api/admin/me' && req.method === 'GET') {
+      const a = req.adminAuth
+      return send(res, 200, { username: a.username, displayName: a.displayName, roleName: a.roleName, permissions: a.permissions })
+    }
+    if (path === '/api/admin/permissions' && req.method === 'GET') {
+      return send(res, 200, PERMISSIONS)
+    }
+
+    // ---- Admin: user accounts ----
+    if (path === '/api/admin/users' && req.method === 'GET') {
+      const rows = db.prepare('SELECT * FROM admin_users ORDER BY id').all()
+      return send(res, 200, rows.map(adminUserOut))
+    }
+    if (path === '/api/admin/users' && req.method === 'POST') {
+      const body = await readBody(req)
+      const username = String(body.username || '').trim()
+      const password = String(body.password || '')
+      if (!/^[a-zA-Z0-9_.-]{2,32}$/.test(username)) return send(res, 400, { error: 'username must be 2-32 chars (letters, digits, _ . -)' })
+      if (password.length < 6) return send(res, 400, { error: 'password must be at least 6 characters' })
+      if (db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username)) return send(res, 400, { error: 'username already exists' })
+      const roleId = Number(body.roleId) || 0
+      if (!db.prepare('SELECT id FROM admin_roles WHERE id = ?').get(roleId)) return send(res, 400, { error: 'role not found' })
+      const info = db.prepare('INSERT INTO admin_users (username, password_hash, display_name, role_id, active, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(username, hashPassword(password), String(body.displayName || username), roleId, body.active === false ? 0 : 1, new Date().toISOString())
+      return send(res, 201, adminUserOut(db.prepare('SELECT * FROM admin_users WHERE id = ?').get(Number(info.lastInsertRowid))))
+    }
+    const adminUserMatch = path.match(/^\/api\/admin\/users\/(\d+)$/)
+    if (adminUserMatch && req.method === 'PUT') {
+      const id = Number(adminUserMatch[1])
+      const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id)
+      if (!user) return send(res, 404, { error: 'user not found' })
+      const body = await readBody(req)
+      const roleId = body.roleId === undefined ? user.role_id : Number(body.roleId)
+      if (!db.prepare('SELECT id FROM admin_roles WHERE id = ?').get(roleId)) return send(res, 400, { error: 'role not found' })
+      const active = body.active === undefined ? user.active : (body.active ? 1 : 0)
+      if (user.active === 1 && isSuperRole(user.role_id) && (active === 0 || !isSuperRole(roleId)) && !otherSuperExists(id)) {
+        return send(res, 400, { error: 'keep at least one active super admin' })
+      }
+      let hash = user.password_hash
+      if (body.password) {
+        if (String(body.password).length < 6) return send(res, 400, { error: 'password must be at least 6 characters' })
+        hash = hashPassword(body.password)
+      }
+      db.prepare('UPDATE admin_users SET display_name = ?, role_id = ?, active = ?, password_hash = ? WHERE id = ?')
+        .run(body.displayName === undefined ? user.display_name : String(body.displayName), roleId, active, hash, id)
+      if (active === 0) db.prepare('DELETE FROM admin_sessions WHERE user_id = ?').run(id)
+      return send(res, 200, adminUserOut(db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id)))
+    }
+    if (adminUserMatch && req.method === 'DELETE') {
+      const id = Number(adminUserMatch[1])
+      if (req.adminAuth.userId === id) return send(res, 400, { error: 'cannot delete your own account' })
+      const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id)
+      if (!user) return send(res, 404, { error: 'user not found' })
+      if (user.active === 1 && isSuperRole(user.role_id) && !otherSuperExists(id)) {
+        return send(res, 400, { error: 'keep at least one active super admin' })
+      }
+      db.prepare('DELETE FROM admin_sessions WHERE user_id = ?').run(id)
+      db.prepare('DELETE FROM admin_users WHERE id = ?').run(id)
+      return send(res, 200, { ok: true })
+    }
+
+    // ---- Admin: roles (a role = a set of menu permissions) ----
+    if (path === '/api/admin/roles' && req.method === 'GET') {
+      const rows = db.prepare('SELECT * FROM admin_roles ORDER BY id').all()
+      return send(res, 200, rows.map(adminRoleOut))
+    }
+    if (path === '/api/admin/roles' && req.method === 'POST') {
+      const body = await readBody(req)
+      const name = String(body.name || '').trim()
+      if (!name) return send(res, 400, { error: 'role name is required' })
+      if (db.prepare('SELECT id FROM admin_roles WHERE name = ?').get(name)) return send(res, 400, { error: 'role name already exists' })
+      const perms = Array.isArray(body.permissions) ? body.permissions.filter((p) => ALL_PERMS.includes(p) || p === '*') : []
+      const info = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, 0)').run(name, JSON.stringify(perms))
+      return send(res, 201, adminRoleOut(db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(Number(info.lastInsertRowid))))
+    }
+    const adminRoleMatch = path.match(/^\/api\/admin\/roles\/(\d+)$/)
+    if (adminRoleMatch && req.method === 'PUT') {
+      const id = Number(adminRoleMatch[1])
+      const role = db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(id)
+      if (!role) return send(res, 404, { error: 'role not found' })
+      const body = await readBody(req)
+      const name = body.name === undefined ? role.name : String(body.name).trim()
+      if (!name) return send(res, 400, { error: 'role name is required' })
+      const dup = db.prepare('SELECT id FROM admin_roles WHERE name = ? AND id != ?').get(name, id)
+      if (dup) return send(res, 400, { error: 'role name already exists' })
+      // The built-in super-admin role always keeps full permissions.
+      const perms = role.builtin === 1
+        ? ['*']
+        : (Array.isArray(body.permissions) ? body.permissions.filter((p) => ALL_PERMS.includes(p) || p === '*') : parseJsonCol(role.permissions, []))
+      db.prepare('UPDATE admin_roles SET name = ?, permissions = ? WHERE id = ?').run(name, JSON.stringify(perms), id)
+      return send(res, 200, adminRoleOut(db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(id)))
+    }
+    if (adminRoleMatch && req.method === 'DELETE') {
+      const id = Number(adminRoleMatch[1])
+      const role = db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(id)
+      if (!role) return send(res, 404, { error: 'role not found' })
+      if (role.builtin === 1) return send(res, 400, { error: 'built-in role cannot be deleted' })
+      const { n } = db.prepare('SELECT COUNT(*) AS n FROM admin_users WHERE role_id = ?').get(id)
+      if (n > 0) return send(res, 400, { error: `role still has ${n} user(s); reassign them first` })
+      db.prepare('DELETE FROM admin_roles WHERE id = ?').run(id)
+      return send(res, 200, { ok: true })
+    }
+
     return send(res, 404, { error: 'not found' })
   } catch (err) {
     return send(res, 500, { error: String(err && err.message || err) })
@@ -442,5 +705,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`taojie-overseas-server listening on http://localhost:${PORT} (db: ${DB_PATH})`)
-  if (!ADMIN_TOKEN) console.log('warning: ADMIN_TOKEN not set — admin endpoints are disabled')
+  if (!ADMIN_TOKEN) console.log('warning: ADMIN_TOKEN not set — root token disabled; set it once to bootstrap the first admin account (admin / ADMIN_TOKEN)')
 })
