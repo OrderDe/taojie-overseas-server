@@ -11,7 +11,7 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${infra.host}:3306/taojie_overseas_beta?characterEncoding=utf-8&useSSL=false&serverTimeZone=GMT+8&connectTimeout=3000&socketTimeout=30000
+    url: jdbc:mysql://${infra.host}:3306/taojie_overseas?characterEncoding=utf-8&useSSL=false&serverTimeZone=GMT+8&connectTimeout=3000&socketTimeout=30000
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     druid:

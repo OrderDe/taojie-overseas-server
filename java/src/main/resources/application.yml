@@ -15,7 +15,7 @@ spring:
   application:
     name: tjMall-overseas
   profiles:
-    active: beta
+    active: dev
   main:
     allow-bean-definition-overriding: true
   servlet:
