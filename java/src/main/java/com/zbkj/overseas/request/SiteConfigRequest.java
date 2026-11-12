@@ -43,6 +43,9 @@ public class SiteConfigRequest {
     @Schema(description = "币种符号，如 $")
     private String currency;
 
+    @Schema(description = "站点 Logo 图片地址，空 = 前台显示文字店名")
+    private String logo;
+
     @Schema(description = "顶部导航菜单 [{label, link}]，空数组表示清空")
     private List<NavItem> navItems;
 
