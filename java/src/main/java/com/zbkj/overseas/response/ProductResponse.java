@@ -48,6 +48,8 @@ public class ProductResponse implements Serializable {
 
     private String image;
 
+    private String video;
+
     private String tag;
 
     @Schema(description = "按请求语言解析后的简介")

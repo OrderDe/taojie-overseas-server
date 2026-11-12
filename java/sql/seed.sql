@@ -15,7 +15,7 @@ INSERT INTO eb_overseas_category (id, names, sort, is_show) VALUES
 ON DUPLICATE KEY UPDATE names = VALUES(names), sort = VALUES(sort), is_show = 1;
 
 INSERT INTO eb_overseas_product
-  (source_id, category_id, names, price, ot_price, sales, unit, moq, image, tag, blurb, specs, is_show, sort)
+  (source_id, category_id, names, price, ot_price, sales, unit, moq, image, video, tag, blurb, specs, is_show, sort)
 VALUES
   ('demo-1', 'clear', '{"en": "2K High-Gloss Clear Coat", "zh": "2K 高光清漆"}', 9.9, 14.5, 1280, '1L tin', 100, NULL, 'Best seller', '{"en": "Mirror gloss, fast cure, excellent weather resistance for refinish systems."}', '{"Mix ratio": "2 : 1 with hardener", "Drying time": "30 min @ 25°C (touch dry)", "Coverage": "8–10 m² / L", "Shelf life": "24 months"}', 1, 0),
   ('demo-2', 'paint', '{"en": "1K Metallic Basecoat — Silver", "zh": "1K 金属银底漆"}', 7.4, 10.2, 860, '1L tin', 100, NULL, NULL, '{"en": "Fine aluminium effect, strong hiding power, blends easily into OEM finishes."}', '{"Mix ratio": "Ready to use / 1 : 0.8 thinner", "Drying time": "15 min flash-off", "Coverage": "9–11 m² / L", "Shelf life": "24 months"}', 1, 10),

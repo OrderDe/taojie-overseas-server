@@ -139,6 +139,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setUnit(p.getUnit());
         r.setMoq(p.getMoq());
         r.setImage(p.getImage());
+        r.setVideo(p.getVideo() == null ? "" : p.getVideo());
         r.setTag(p.getTag());
         r.setDescription(LangUtil.pick(p.getBlurb(), lang));
         r.setSpecs(LangUtil.toStringMap(p.getSpecs()));
@@ -190,6 +191,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         p.setUnit(StrUtil.blankToDefault(request.getUnit(), "pc"));
         p.setMoq(request.getMoq() == null ? 0 : request.getMoq());
         p.setImage(StrUtil.blankToDefault(request.getImage(), ""));
+        p.setVideo(StrUtil.blankToDefault(request.getVideo(), ""));
         p.setTag(StrUtil.blankToDefault(request.getTag(), ""));
         p.setBlurb(StrUtil.blankToDefault(request.getBlurb(), ""));
         p.setSpecs(request.getSpecs() == null ? "{}" : JSONUtil.toJsonStr(request.getSpecs()));
@@ -219,6 +221,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setUnit(p.getUnit());
         r.setMoq(p.getMoq());
         r.setImage(p.getImage());
+        r.setVideo(p.getVideo() == null ? "" : p.getVideo());
         r.setTag(p.getTag());
         r.setBlurb(LangUtil.pick(p.getBlurb(), "en"));
         r.setSpecs(parseSpecs(p.getSpecs()));

@@ -26,10 +26,10 @@
 //   GET|POST|PUT|DELETE /api/admin/brands[/:id]       (brand management, plat-style)
 //   GET|POST|PUT|DELETE /api/admin/users[/:id]        (admin accounts)
 //   GET|POST|PUT|DELETE /api/admin/roles[/:id]        (roles = menu permissions)
-//   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url})
+//   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url}; images <= 6 MB, videos mp4/webm/mov <= 50 MB)
 //   POST /api/admin/translate          (zh name -> 11 target languages, entry-time only)
 //   GET  /admin                        (admin UI, static files in admin/)
-//   GET  /uploads/<file>               (uploaded product images)
+//   GET  /uploads/<file>               (uploaded product images / videos)
 //
 // Data lives in a single SQLite file (data/app.db). On first boot the
 // bundled seed (data/seed.json) is imported; replace/extend it with real
@@ -69,6 +69,7 @@ db.exec(`
     unit TEXT NOT NULL DEFAULT 'pc',
     moq INTEGER NOT NULL DEFAULT 0,
     image TEXT NOT NULL DEFAULT '',
+    video TEXT NOT NULL DEFAULT '',
     tag TEXT NOT NULL DEFAULT '',
     blurb TEXT NOT NULL DEFAULT '',
     specs TEXT NOT NULL DEFAULT '{}',
@@ -156,6 +157,9 @@ try { db.exec('ALTER TABLE products ADD COLUMN sort INTEGER NOT NULL DEFAULT 0')
 // Products gained a brand link when brand management landed (plat has
 // brands as a first-class catalogue entity, products reference one).
 try { db.exec("ALTER TABLE products ADD COLUMN brand_id TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
+// Products gained one optional demo video (URL, '' = none) alongside the
+// single image when the admin console grew a video upload.
+try { db.exec("ALTER TABLE products ADD COLUMN video TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
 // Chat sessions gained a visitor profile (geo/device/UA), presence
 // (last_seen), typing + read watermarks, an internal note and a lifecycle
 // status when the chat grew into a small support console. Add in place.
@@ -183,13 +187,13 @@ function seedIfEmpty() {
   const insC = db.prepare('INSERT OR REPLACE INTO categories (id, names, sort) VALUES (?, ?, ?)')
   ;(seed.categories || []).forEach((c, i) => insC.run(String(c.id), JSON.stringify(c.names || { en: c.name || '' }), i))
   const insP = db.prepare(`INSERT OR REPLACE INTO products
-    (id, source_id, category_id, names, price, ot_price, sales, unit, moq, image, tag, blurb, specs, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+    (id, source_id, category_id, names, price, ot_price, sales, unit, moq, image, video, tag, blurb, specs, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
   for (const p of seed.products || []) {
     insP.run(p.id, String(p.sourceId ?? p.id), String(p.categoryId || ''),
       JSON.stringify(p.names || { en: p.name || '' }), Number(p.price) || 0, Number(p.otPrice) || 0,
       Number(p.sales) || 0, String(p.unit || 'pc'), Number(p.moq) || 0, String(p.image || ''),
-      String(p.tag || ''), String(p.blurb || ''), JSON.stringify(p.specs || {}))
+      String(p.video || ''), String(p.tag || ''), String(p.blurb || ''), JSON.stringify(p.specs || {}))
   }
   console.log(`seeded ${seed.products?.length || 0} products, ${seed.categories?.length || 0} categories`)
 }
@@ -238,6 +242,7 @@ function productOut(row, lang) {
     unit: row.unit,
     moq: row.moq,
     image: row.image,
+    video: row.video || '',
     tag: row.tag,
     description: row.blurb,
     specs
@@ -510,7 +515,8 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon'
+  '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime'
 }
 
 function sendFile(res, filePath) {
@@ -548,6 +554,7 @@ function adminProductOut(row) {
     unit: row.unit,
     moq: row.moq,
     image: row.image,
+    video: row.video || '',
     tag: row.tag,
     blurb: row.blurb,
     specs: parseJsonCol(row.specs, {}),
@@ -574,6 +581,7 @@ function productValues(body) {
     unit: String(body.unit || 'pc'),
     moq: Math.max(0, Math.trunc(Number(body.moq) || 0)),
     image: String(body.image || ''),
+    video: String(body.video || ''),
     tag: String(body.tag || ''),
     blurb: String(body.blurb || ''),
     specs: JSON.stringify(body.specs && typeof body.specs === 'object' ? body.specs : {}),
@@ -983,9 +991,9 @@ const server = createServer(async (req, res) => {
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
       const info = db.prepare(`INSERT INTO products
-        (source_id, category_id, brand_id, names, price, ot_price, sales, unit, moq, image, tag, blurb, specs, sort, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active)
+        (source_id, category_id, brand_id, names, price, ot_price, sales, unit, moq, image, video, tag, blurb, specs, sort, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active)
       const row = db.prepare('SELECT * FROM products WHERE id = ?').get(Number(info.lastInsertRowid))
       return send(res, 201, adminProductOut(row))
     }
@@ -997,8 +1005,8 @@ const server = createServer(async (req, res) => {
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
       db.prepare(`UPDATE products SET source_id = ?, category_id = ?, brand_id = ?, names = ?, price = ?, ot_price = ?,
-        sales = ?, unit = ?, moq = ?, image = ?, tag = ?, blurb = ?, specs = ?, sort = ?, active = ? WHERE id = ?`)
-        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.tag, v.blurb, v.specs, v.sort, v.active, id)
+        sales = ?, unit = ?, moq = ?, image = ?, video = ?, tag = ?, blurb = ?, specs = ?, sort = ?, active = ? WHERE id = ?`)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active, id)
       return send(res, 200, adminProductOut(db.prepare('SELECT * FROM products WHERE id = ?').get(id)))
     }
     if (adminProductMatch && req.method === 'DELETE') {
@@ -1096,14 +1104,25 @@ const server = createServer(async (req, res) => {
       return send(res, 200, rows.map((b) => ({ id: b.id, name: pickLang(b.names, lang), logo: b.logo || '' })))
     }
 
-    // ---- Admin: image upload (base64 JSON keeps the server dependency-free) ----
+    // ---- Admin: image / video upload (base64 JSON keeps the server dependency-free) ----
+    // Images keep the original rules (png/jpg/webp/gif, <= 6 MB decoded).
+    // Videos (mp4/webm/mov) are allowed up to 50 MB decoded; base64 inflates
+    // that to ~68 MB of JSON, so ONLY this route's body limit is raised to
+    // 80 MB — every other route keeps the small default readBody limit.
     if (path === '/api/admin/upload' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
-      const body = await readBody(req, 12e6)
+      const body = await readBody(req, 80e6)
       const ext = extname(String(body.filename || '')).toLowerCase()
-      if (!['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) return send(res, 400, { error: 'only png/jpg/webp/gif images are allowed' })
+      const isVideo = ['.mp4', '.webm', '.mov'].includes(ext)
+      if (!isVideo && !['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
+        return send(res, 400, { error: 'only png/jpg/webp/gif images or mp4/webm/mov videos are allowed' })
+      }
       const buf = Buffer.from(String(body.dataBase64 || ''), 'base64')
-      if (buf.length === 0 || buf.length > 6e6) return send(res, 400, { error: 'image is empty or larger than 6 MB' })
+      if (isVideo) {
+        if (buf.length === 0 || buf.length > 50e6) return send(res, 400, { error: 'video is empty or larger than 50 MB' })
+      } else if (buf.length === 0 || buf.length > 6e6) {
+        return send(res, 400, { error: 'image is empty or larger than 6 MB' })
+      }
       const safe = basename(String(body.filename)).replace(/[^a-zA-Z0-9._-]/g, '-')
       const name = `${Date.now()}-${safe}`
       writeFileSync(join(UPLOAD_DIR, name), buf)

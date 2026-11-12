@@ -13,7 +13,7 @@ scripts/import-products.mjs format — one pipeline serves both:
       "products":   [{"sourceId": "tjmall-123", "categoryId": "clear",
                       "names": {"en": "...", "zh": "..."}, "price": 9.9,
                       "otPrice": 14.5, "sales": 0, "unit": "1L tin",
-                      "moq": 100, "image": "https://...", "tag": "",
+                      "moq": 100, "image": "https://...", "video": "", "tag": "",
                       "blurb": {"en": "..."}, "specs": {"Mix ratio": "2 : 1"}}]
     }
 
@@ -62,13 +62,14 @@ def main() -> int:
             cur.execute(
                 """INSERT INTO eb_overseas_product
                      (source_id, category_id, names, price, ot_price, sales, unit, moq,
-                      image, tag, blurb, specs, is_show, sort)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s)
+                      image, video, tag, blurb, specs, is_show, sort)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s)
                    ON DUPLICATE KEY UPDATE
                      category_id = VALUES(category_id), names = VALUES(names),
                      price = VALUES(price), ot_price = VALUES(ot_price),
                      sales = VALUES(sales), unit = VALUES(unit), moq = VALUES(moq),
-                     image = VALUES(image), tag = VALUES(tag), blurb = VALUES(blurb),
+                     image = VALUES(image), video = VALUES(video), tag = VALUES(tag),
+                     blurb = VALUES(blurb),
                      specs = VALUES(specs), is_show = 1""",
                 (
                     p["sourceId"],
@@ -80,6 +81,7 @@ def main() -> int:
                     p.get("unit"),
                     p.get("moq", 1),
                     p.get("image") or None,
+                    p.get("video") or None,
                     p.get("tag") or None,
                     blurb_json,
                     json.dumps(p.get("specs"), ensure_ascii=False) if p.get("specs") else None,

@@ -45,6 +45,9 @@ public class ProductSaveRequest {
     @Schema(description = "图片地址")
     private String image;
 
+    @Schema(description = "视频地址（mp4/webm/mov，可空）")
+    private String video;
+
     @Schema(description = "角标，如 Hot / New")
     private String tag;
 

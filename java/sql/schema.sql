@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_product (
     unit        VARCHAR(64)      NULL,
     moq         INT          NOT NULL DEFAULT 1,
     image       VARCHAR(1024)    NULL,
+    video       VARCHAR(1024)    NULL COMMENT '商品视频 URL（空 = 无视频）',
     tag         VARCHAR(128)     NULL,
     blurb       JSON             NULL COMMENT '多语言简介（也可存单语言纯文本）',
     specs       JSON             NULL COMMENT '参数 {"Mix ratio":"2 : 1",...}',

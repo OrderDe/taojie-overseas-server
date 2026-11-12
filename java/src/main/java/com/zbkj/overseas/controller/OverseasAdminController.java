@@ -44,6 +44,8 @@ public class OverseasAdminController {
 
     private static final Set<String> IMAGE_EXTS = Set.of(".png", ".jpg", ".jpeg", ".webp", ".gif");
     private static final int MAX_IMAGE_BYTES = 6_000_000;
+    private static final Set<String> VIDEO_EXTS = Set.of(".mp4", ".webm", ".mov");
+    private static final int MAX_VIDEO_BYTES = 50_000_000;
 
     @Autowired
     private OverseasProductService productService;
@@ -141,9 +143,9 @@ public class OverseasAdminController {
         return CommonResult.success(Map.of("ok", true));
     }
 
-    // ---- image upload ----
+    // ---- image / video upload ----
 
-    @Operation(summary = "管理端：上传商品图（base64），返回可访问地址")
+    @Operation(summary = "管理端：上传商品图片或视频（base64），返回可访问地址")
     @PostMapping("/upload")
     public CommonResult<Map<String, Object>> upload(@RequestBody UploadRequest request) throws IOException {
         String filename = request.getFilename() == null ? "" : request.getFilename();
@@ -152,16 +154,21 @@ public class OverseasAdminController {
         if (dot >= 0) {
             ext = filename.substring(dot).toLowerCase();
         }
-        if (!IMAGE_EXTS.contains(ext)) {
-            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "只允许 png/jpg/webp/gif 图片");
+        boolean isVideo = VIDEO_EXTS.contains(ext);
+        if (!isVideo && !IMAGE_EXTS.contains(ext)) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "只允许 png/jpg/webp/gif 图片或 mp4/webm/mov 视频");
         }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(request.getDataBase64() == null ? "" : request.getDataBase64());
         } catch (IllegalArgumentException e) {
-            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "图片数据无效");
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), isVideo ? "视频数据无效" : "图片数据无效");
         }
-        if (bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
+        if (isVideo) {
+            if (bytes.length == 0 || bytes.length > MAX_VIDEO_BYTES) {
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "视频为空或超过 50 MB");
+            }
+        } else if (bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
             throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "图片为空或超过 6 MB");
         }
         String safe = Paths.get(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "-");

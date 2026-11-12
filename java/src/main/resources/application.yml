@@ -19,6 +19,10 @@ spring:
   main:
     allow-bean-definition-overriding: true
   servlet:
+    # Multipart caps only gate form-file uploads. The admin upload endpoint
+    # takes base64 JSON (images <= 6 MB, videos mp4/webm/mov <= 50 MB
+    # decoded) and enforces its limits in OverseasAdminController, so these
+    # values just need to stay comfortably above a ~68 MB base64 body.
     multipart:
       max-file-size: 500MB
       max-request-size: 500MB

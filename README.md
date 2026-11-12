@@ -62,7 +62,7 @@ people under 用户与角色.
 | `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` (perm `products`) | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
 | `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` (perm `categories`) | Category management (delete refuses while products use it) |
 | `GET\|POST /api/admin/brands`, `PUT\|DELETE /api/admin/brands/:id` (perm `products`) | Brand management, mirroring plat's brand module (multi-language names, logo; delete refuses while products use it; saving a product with an unknown `brandId` is rejected) |
-| `POST /api/admin/upload` (perm `products`) | Image upload as `{filename, dataBase64}` → `{url}` (png/jpg/webp/gif, ≤ 6 MB; files land in `data/uploads/`, served at `/uploads/`) |
+| `POST /api/admin/upload` (perm `products`) | Image/video upload as `{filename, dataBase64}` → `{url}` (images png/jpg/webp/gif ≤ 6 MB; videos mp4/webm/mov ≤ 50 MB; files land in `data/uploads/`, served at `/uploads/`) |
 | `GET\|POST /api/admin/users`, `PUT\|DELETE /api/admin/users/:id` (perm `users`) | Admin accounts (create, assign role, enable/disable, reset password; last super admin is protected) |
 | `GET\|POST /api/admin/roles`, `PUT\|DELETE /api/admin/roles/:id`, `GET /api/admin/permissions` (perm `users`) | Roles = menu-permission sets (built-in super role is locked to all permissions) |
 

@@ -40,6 +40,8 @@ public class AdminProductResponse implements Serializable {
 
     private String image;
 
+    private String video;
+
     private String tag;
 
     @Schema(description = "简介（英文/原文）")
