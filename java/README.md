@@ -39,9 +39,11 @@ GET  /api/products/{id}?lang=
 GET  /api/keywords?lang=
 GET  /api/site-config
 POST /api/rfq            { name*, contact*, company, country, productName, quantity, message }
-POST /api/chat/start     { name?, token?, lang? } -> { sessionId, token, name }（带已知 token 则复用会话）
-POST /api/chat/messages  { token*, body* } 访客发消息（按 IP 限流）
-GET  /api/chat/messages?token=&afterId=     访客拉本会话消息（afterId 增量）
+POST /api/chat/start     { name?, token?, lang?, referrer?, page?, pageTitle? } -> { sessionId, token, name }（带已知 token 则复用会话；服务端解析 UA + ip-api 地区，异步回填不阻塞）
+POST /api/chat/messages  { token*, body* } 访客发消息（按 IP 限流；已结束会话自动重开）
+GET  /api/chat/messages?token=&afterId=     访客拉本会话消息（afterId 增量；同时推进访客已读水位，返回 agentTyping）
+POST /api/chat/ping      { token*, page?, pageTitle? } 心跳：在线状态（45 秒）+ 当前页面
+POST /api/chat/typing    { token* } 访客正在输入信号
 ```
 
 管理（拦截器 `AdminTokenInterceptor`）：先 `POST /api/admin/login` 用账号+密码
@@ -57,9 +59,12 @@ POST /api/admin/login               登录（免拦截）{username, password} ->
 POST /api/admin/logout              退出（作废会话）
 GET  /api/admin/me                  当前账号与菜单权限
 GET  /api/admin/rfq                 最新 200 条询价（需 rfq 权限）
-GET  /api/admin/chat/sessions       聊天会话列表：访客名/最后消息预览/未读数（需 chat 权限）
-GET  /api/admin/chat/sessions/{id}/messages  会话全部消息（读取即清未读）
-POST /api/admin/chat/sessions/{id}/messages  以客服身份回复 {body}（存量库需跑 sql/chat.sql）
+GET  /api/admin/chat/sessions?keyword=  聊天会话列表：访客名/预览/未读数/访客画像（地区/设备/UA）/在线/疑似机器人（需 chat 权限；keyword 匹配访客名或消息内容）
+GET  /api/admin/chat/sessions/{id}/messages  会话全部消息（读取即清未读；session 带 visitorReadMsgId/visitorTyping）
+POST /api/admin/chat/sessions/{id}/messages  以客服身份回复 {body}（存量库需跑 sql/chat.sql，增强列在同一文件）
+POST /api/admin/chat/sessions/{id}/typing    客服正在输入信号
+PUT  /api/admin/chat/sessions/{id}/note      保存内部备注 {note}（访客不可见）
+PUT  /api/admin/chat/sessions/{id}/status    结束/重开会话 {status: open|closed}
 PUT  /api/admin/site-config         保存站点配置（需 config 权限）
 GET|POST /api/admin/products        商品列表（管理版）/ 新建商品（需 products 权限）
 PUT|DELETE /api/admin/products/{id} 修改 / 删除商品

@@ -32,9 +32,11 @@ Public (no login — the overseas showcase is for anonymous visitors):
 | `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |
 | `GET /api/brands?lang=` | Active brands (products reference them by `brandId`) |
 | `POST /api/rfq` | Submit an inquiry `{name, contact, product, qty, message}` — stored as a lead (rate-limited per IP) |
-| `POST /api/chat/start` | Start a visitor chat session `{name?, token?}` → `{sessionId, token}` (a known token reuses its session) |
-| `POST /api/chat/messages` | Visitor sends a chat message `{token, body}` (rate-limited per IP) |
-| `GET /api/chat/messages?token=&afterId=` | Visitor pulls own chat messages (incremental via `afterId`) |
+| `POST /api/chat/start` | Start a visitor chat session `{name?, token?, referrer?, page?, pageTitle?}` → `{sessionId, token}` (a known token reuses its session; IP geo + UA profile captured, geo best-effort) |
+| `POST /api/chat/messages` | Visitor sends a chat message `{token, body}` (rate-limited per IP; re-opens a closed session) |
+| `GET /api/chat/messages?token=&afterId=` | Visitor pulls own chat messages (incremental via `afterId`; marks agent messages read, returns `agentTyping`) |
+| `POST /api/chat/ping` | Visitor heartbeat `{token, page?, pageTitle?}` — online presence + current page |
+| `POST /api/chat/typing` | Visitor "typing…" signal `{token}` |
 
 Admin auth: log in with a username + password — `POST /api/admin/login`
 returns a session token that is then sent as the `x-admin-token` header.
@@ -51,8 +53,11 @@ people under 用户与角色.
 |---|---|
 | `POST /api/admin/login` / `POST /api/admin/logout` / `GET /api/admin/me` | Login (public), logout, current account + permissions |
 | `GET /api/admin/rfq` (perm `rfq`) | Latest 200 RFQ leads |
-| `GET /api/admin/chat/sessions` (perm `chat`) | Chat sessions by latest activity, with last-message preview and unread visitor-message count |
-| `GET\|POST /api/admin/chat/sessions/:id/messages` (perm `chat`) | Full thread (reading marks visitor messages as read) / reply as agent |
+| `GET /api/admin/chat/sessions?keyword=` (perm `chat`) | Chat sessions by latest activity: last-message preview, unread count, visitor profile (geo/device/UA), online + bot-suspect flags; `keyword` matches visitor name or message text |
+| `GET\|POST /api/admin/chat/sessions/:id/messages` (perm `chat`) | Full thread (reading marks visitor messages as read; session carries `visitorReadMsgId` + `visitorTyping`) / reply as agent |
+| `POST /api/admin/chat/sessions/:id/typing` (perm `chat`) | Agent "typing…" signal |
+| `PUT /api/admin/chat/sessions/:id/note` (perm `chat`) | Internal note on the session (never sent to the visitor) |
+| `PUT /api/admin/chat/sessions/:id/status` (perm `chat`) | Close / re-open the session (`{status: open\|closed}`) |
 | `PUT /api/admin/site-config` (perm `config`) | Update site config (only known fields are accepted) |
 | `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` (perm `products`) | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
 | `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` (perm `categories`) | Category management (delete refuses while products use it) |

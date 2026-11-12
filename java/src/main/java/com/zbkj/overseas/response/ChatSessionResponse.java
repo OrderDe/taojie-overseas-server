@@ -30,4 +30,47 @@ public class ChatSessionResponse implements Serializable {
     private Date lastMsgAt;
 
     private Date createTime;
+
+    // ---- Visitor profile / presence (same field names as the Node API) ----
+
+    private String ip;
+
+    private String country;
+
+    private String region;
+
+    private String city;
+
+    private String timezone;
+
+    private String device;
+
+    private String browser;
+
+    private String os;
+
+    private String referrer;
+
+    private String currentPage;
+
+    private Integer pageViews;
+
+    private Date lastSeenAt;
+
+    private Boolean online;
+
+    private Boolean suspectBot;
+
+    /** Count of messages this visitor has sent. */
+    private Integer msgCount;
+
+    private String status;
+
+    private String note;
+
+    private Long visitorReadMsgId;
+
+    private Boolean visitorTyping;
+
+    private Boolean agentTyping;
 }

@@ -14,7 +14,8 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${infra.host}:${DB_PORT:3306}/taojie_overseas?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+    # characterEncoding=utf8mb4: 聊天消息要存 emoji（4 字节），连接字符集必须显式声明，不能依赖服务器默认
+    url: jdbc:mysql://${infra.host}:${DB_PORT:3306}/taojie_overseas?characterEncoding=utf8mb4&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     druid:

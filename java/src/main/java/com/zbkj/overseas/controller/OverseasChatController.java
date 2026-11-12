@@ -1,8 +1,10 @@
 package com.zbkj.overseas.controller;
 
 import com.zbkj.overseas.common.result.CommonResult;
+import com.zbkj.overseas.request.ChatPingRequest;
 import com.zbkj.overseas.request.ChatSendRequest;
 import com.zbkj.overseas.request.ChatStartRequest;
+import com.zbkj.overseas.request.ChatTypingRequest;
 import com.zbkj.overseas.response.ChatMessageResponse;
 import com.zbkj.overseas.response.ChatStartResponse;
 import com.zbkj.overseas.service.OverseasChatService;
@@ -37,7 +39,8 @@ public class OverseasChatController {
     @PostMapping("/start")
     public CommonResult<ChatStartResponse> start(@RequestBody(required = false) ChatStartRequest request,
                                                  HttpServletRequest httpRequest) {
-        return CommonResult.success(chatService.start(request, clientIp(httpRequest)));
+        return CommonResult.success(chatService.start(request, clientIp(httpRequest),
+                httpRequest.getHeader("User-Agent")));
     }
 
     @PermitAll
@@ -53,8 +56,26 @@ public class OverseasChatController {
     @GetMapping("/messages")
     public CommonResult<Map<String, Object>> pull(@RequestParam String token,
                                                   @RequestParam(required = false, defaultValue = "0") long afterId) {
-        List<ChatMessageResponse> messages = chatService.listVisitorMessages(token, afterId);
-        return CommonResult.success(Map.of("messages", messages));
+        OverseasChatService.ChatPullResult result = chatService.listVisitorMessages(token, afterId);
+        return CommonResult.success(Map.of(
+                "messages", result.messages(),
+                "agentTyping", result.agentTyping()));
+    }
+
+    @PermitAll
+    @Operation(summary = "访客心跳（在线状态 + 当前页面）")
+    @PostMapping("/ping")
+    public CommonResult<Map<String, Object>> ping(@Valid @RequestBody ChatPingRequest request) {
+        chatService.ping(request);
+        return CommonResult.success(Map.of("ok", true));
+    }
+
+    @PermitAll
+    @Operation(summary = "访客正在输入")
+    @PostMapping("/typing")
+    public CommonResult<Map<String, Object>> typing(@Valid @RequestBody ChatTypingRequest request) {
+        chatService.visitorTyping(request);
+        return CommonResult.success(Map.of("ok", true));
     }
 
     private String clientIp(HttpServletRequest request) {

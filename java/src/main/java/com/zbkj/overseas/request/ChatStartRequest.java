@@ -19,4 +19,13 @@ public class ChatStartRequest {
 
     @Schema(description = "访客语言 en/zh/es/fr/pt")
     private String lang;
+
+    @Schema(description = "来源页（document.referrer），可空")
+    private String referrer;
+
+    @Schema(description = "当前页面路径（location.pathname），可空")
+    private String page;
+
+    @Schema(description = "当前页面标题（document.title），可空")
+    private String pageTitle;
 }

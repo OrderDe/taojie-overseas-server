@@ -11,8 +11,13 @@
 //   POST /api/rfq                      (lead capture, stored in SQLite)
 //   POST /api/chat/start               (visitor chat: create/reuse a session)
 //   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
-//   GET  /api/admin/chat/sessions      (chat sessions + unread counts)
+//   POST /api/chat/ping                (visitor heartbeat: online + current page)
+//   POST /api/chat/typing              (visitor is typing)
+//   GET  /api/admin/chat/sessions?keyword=  (chat sessions + unread + profile)
 //   GET|POST /api/admin/chat/sessions/:id/messages  (read thread / reply)
+//   POST /api/admin/chat/sessions/:id/typing        (agent is typing)
+//   PUT  /api/admin/chat/sessions/:id/note          (internal note, agents only)
+//   PUT  /api/admin/chat/sessions/:id/status        (open/closed)
 //   GET  /api/admin/rfq                (header: x-admin-token)
 //   PUT  /api/admin/site-config        (header: x-admin-token)
 //   POST /api/admin/login              (username+password -> session token)
@@ -117,7 +122,25 @@ db.exec(`
     lang TEXT NOT NULL DEFAULT 'en',
     created_at TEXT NOT NULL,
     last_msg_at TEXT NOT NULL DEFAULT '',
-    last_agent_read_msg_id INTEGER NOT NULL DEFAULT 0
+    last_agent_read_msg_id INTEGER NOT NULL DEFAULT 0,
+    ip TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    browser TEXT NOT NULL DEFAULT '',
+    os TEXT NOT NULL DEFAULT '',
+    referrer TEXT NOT NULL DEFAULT '',
+    current_page TEXT NOT NULL DEFAULT '',
+    page_views INTEGER NOT NULL DEFAULT 0,
+    last_seen_at TEXT NOT NULL DEFAULT '',
+    suspect_bot INTEGER NOT NULL DEFAULT 0,
+    visitor_typing_at TEXT NOT NULL DEFAULT '',
+    agent_typing_at TEXT NOT NULL DEFAULT '',
+    visitor_read_msg_id INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open'
   );
   CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +155,22 @@ try { db.exec('ALTER TABLE products ADD COLUMN sort INTEGER NOT NULL DEFAULT 0')
 // Products gained a brand link when brand management landed (plat has
 // brands as a first-class catalogue entity, products reference one).
 try { db.exec("ALTER TABLE products ADD COLUMN brand_id TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
+// Chat sessions gained a visitor profile (geo/device/UA), presence
+// (last_seen), typing + read watermarks, an internal note and a lifecycle
+// status when the chat grew into a small support console. Add in place.
+for (const col of [
+  "ip TEXT NOT NULL DEFAULT ''", "country TEXT NOT NULL DEFAULT ''",
+  "region TEXT NOT NULL DEFAULT ''", "city TEXT NOT NULL DEFAULT ''",
+  "timezone TEXT NOT NULL DEFAULT ''", "device TEXT NOT NULL DEFAULT ''",
+  "browser TEXT NOT NULL DEFAULT ''", "os TEXT NOT NULL DEFAULT ''",
+  "referrer TEXT NOT NULL DEFAULT ''", "current_page TEXT NOT NULL DEFAULT ''",
+  "page_views INTEGER NOT NULL DEFAULT 0", "last_seen_at TEXT NOT NULL DEFAULT ''",
+  "suspect_bot INTEGER NOT NULL DEFAULT 0", "visitor_typing_at TEXT NOT NULL DEFAULT ''",
+  "agent_typing_at TEXT NOT NULL DEFAULT ''", "visitor_read_msg_id INTEGER NOT NULL DEFAULT 0",
+  "note TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'open'"
+]) {
+  try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`) } catch { /* already there */ }
+}
 mkdirSync(UPLOAD_DIR, { recursive: true })
 
 function seedIfEmpty() {
@@ -371,8 +410,97 @@ function insertChatMessage(sessionId, sender, body) {
   const nowIso = new Date().toISOString()
   const info = db.prepare('INSERT INTO chat_messages (session_id, sender, body, created_at) VALUES (?, ?, ?, ?)')
     .run(sessionId, sender, body, nowIso)
-  db.prepare('UPDATE chat_sessions SET last_msg_at = ? WHERE id = ?').run(nowIso, sessionId)
+  // Sending a message is also a presence signal for the visitor.
+  if (sender === 'visitor') {
+    db.prepare('UPDATE chat_sessions SET last_msg_at = ?, last_seen_at = ? WHERE id = ?').run(nowIso, nowIso, sessionId)
+  } else {
+    db.prepare('UPDATE chat_sessions SET last_msg_at = ? WHERE id = ?').run(nowIso, sessionId)
+  }
   return { id: Number(info.lastInsertRowid), sessionId, sender, body, createdAt: nowIso }
+}
+
+function clientIpOf(req) {
+  return (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim()
+}
+
+// Tiny hand-rolled User-Agent reader (zero dependencies): device class,
+// browser, OS and a bot suspicion flag. Bots cannot be proven either way —
+// this is a signal for the agent, never a hard block.
+function parseUserAgent(uaRaw) {
+  const ua = String(uaRaw || '')
+  const low = ua.toLowerCase()
+  const suspectBot = !ua || /bot|crawler|spider|headless|curl|wget|python-requests|scrapy|httpclient|okhttp|java\/|go-http|postman|insomnia/.test(low)
+  let device = 'desktop'
+  if (/ipad|tablet|playbook|silk/.test(low) || (/android/.test(low) && !/mobile/.test(low))) device = 'tablet'
+  else if (/mobile|iphone|ipod|android|windows phone|blackberry/.test(low)) device = 'mobile'
+  let browser = ''
+  if (/edg\//.test(low)) browser = 'Edge'
+  else if (/opr\/|opera/.test(low)) browser = 'Opera'
+  else if (/chrome\//.test(low)) browser = 'Chrome'
+  else if (/firefox\//.test(low)) browser = 'Firefox'
+  else if (/safari\//.test(low)) browser = 'Safari'
+  else if (/msie|trident/.test(low)) browser = 'IE'
+  let os = ''
+  if (/windows/.test(low)) os = 'Windows'
+  else if (/android/.test(low)) os = 'Android'
+  else if (/iphone|ipad|ipod/.test(low)) os = 'iOS'
+  else if (/mac os|macintosh/.test(low)) os = 'macOS'
+  else if (/linux/.test(low)) os = 'Linux'
+  return { device, browser, os, suspectBot }
+}
+
+function isPrivateIp(ip) {
+  if (!ip) return true
+  if (ip === '::1' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) return true
+  const m = ip.match(/^172\.(\d+)\./)
+  return !!m && Number(m[1]) >= 16 && Number(m[1]) <= 31
+}
+
+// Best-effort geo lookup for a public IP via ip-api.com (free, no key).
+// Called fire-and-forget after the session row exists: a slow or failed
+// lookup leaves the geo fields empty and never delays session creation.
+function lookupChatGeo(sessionId, ip) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 2500)
+  fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,regionName,city,timezone`, { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then((g) => {
+      if (g && g.status === 'success') {
+        db.prepare('UPDATE chat_sessions SET country = ?, region = ?, city = ?, timezone = ? WHERE id = ?')
+          .run(String(g.country || ''), String(g.regionName || ''), String(g.city || ''), String(g.timezone || ''), sessionId)
+      }
+    })
+    .catch(() => { /* geo is best-effort only */ })
+    .finally(() => clearTimeout(t))
+}
+
+// Presence: a heartbeat (or message) within 45s counts as online; a typing
+// stamp within 4s counts as "typing…".
+function chatOnline(s) { return !!s.last_seen_at && Date.now() - Date.parse(s.last_seen_at) < 45000 }
+function chatTyping(iso) { return !!iso && Date.now() - Date.parse(iso) < 4000 }
+
+// Session profile as the admin console sees it (visitor internals such as
+// the note stay admin-side; the visitor API never returns this object).
+function chatSessionOut(s) {
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM chat_messages WHERE session_id = ? AND sender = 'visitor'").get(s.id)
+  return {
+    id: s.id, visitorName: s.visitor_name, lang: s.lang,
+    createdAt: s.created_at, lastMsgAt: s.last_msg_at,
+    ip: s.ip || '', country: s.country || '', region: s.region || '', city: s.city || '',
+    timezone: s.timezone || '', device: s.device || '', browser: s.browser || '', os: s.os || '',
+    referrer: s.referrer || '', currentPage: s.current_page || '', pageViews: s.page_views || 0,
+    lastSeenAt: s.last_seen_at || '', online: chatOnline(s),
+    suspectBot: s.suspect_bot === 1, msgCount: n,
+    status: s.status || 'open', note: s.note || '',
+    visitorReadMsgId: s.visitor_read_msg_id || 0,
+    visitorTyping: chatTyping(s.visitor_typing_at), agentTyping: chatTyping(s.agent_typing_at)
+  }
+}
+
+function chatPageLabel(page, pageTitle) {
+  const p = String(page || '').trim().slice(0, 300)
+  const t = String(pageTitle || '').trim().slice(0, 120)
+  return t ? `${p} · ${t}` : p
 }
 
 // ---- Admin: catalogue management + static files (admin UI, uploads) ----
@@ -568,18 +696,36 @@ const server = createServer(async (req, res) => {
     // ---- Online chat: visitor endpoints (identity = the session token) ----
     if (req.method === 'POST' && path === '/api/chat/start') {
       const body = await readBody(req)
+      const ip = clientIpOf(req)
+      const nowIso = new Date().toISOString()
       const existing = chatSessionByToken(String(body.token || req.headers['x-chat-token'] || '').trim())
       if (existing) {
+        // Reuse: refresh presence, and follow the visitor to a new page.
+        const page = chatPageLabel(body.page, body.pageTitle)
+        if (page && page !== existing.current_page) {
+          db.prepare('UPDATE chat_sessions SET last_seen_at = ?, current_page = ?, page_views = page_views + 1 WHERE id = ?')
+            .run(nowIso, page, existing.id)
+        } else {
+          db.prepare('UPDATE chat_sessions SET last_seen_at = ? WHERE id = ?').run(nowIso, existing.id)
+        }
         return send(res, 200, { sessionId: existing.id, token: existing.visitor_token, name: existing.visitor_name })
       }
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim()
       if (!hitAllowed(chatStartHits, ip, 10)) return send(res, 429, { error: 'too many requests, try again later' })
       const name = String(body.name || '').trim().slice(0, 64) || '访客'
       const token = randomBytes(24).toString('hex')
-      const nowIso = new Date().toISOString()
-      const info = db.prepare('INSERT INTO chat_sessions (visitor_token, visitor_name, lang, created_at, last_msg_at) VALUES (?, ?, ?, ?, ?)')
-        .run(token, name, LANGS.includes(body.lang) ? body.lang : 'en', nowIso, nowIso)
-      return send(res, 201, { sessionId: Number(info.lastInsertRowid), token, name })
+      const ua = parseUserAgent(req.headers['user-agent'])
+      const local = isPrivateIp(ip)
+      const info = db.prepare(`INSERT INTO chat_sessions
+        (visitor_token, visitor_name, lang, created_at, last_msg_at, ip, country, device, browser, os,
+         referrer, current_page, page_views, last_seen_at, suspect_bot, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'open')`)
+        .run(token, name, LANGS.includes(body.lang) ? body.lang : 'en', nowIso, nowIso,
+          ip, local ? '本地/内网' : '', ua.device, ua.browser, ua.os,
+          String(body.referrer || '').trim().slice(0, 500), chatPageLabel(body.page, body.pageTitle),
+          nowIso, ua.suspectBot ? 1 : 0)
+      const sessionId = Number(info.lastInsertRowid)
+      if (!local) lookupChatGeo(sessionId, ip)
+      return send(res, 201, { sessionId, token, name })
     }
 
     if (path === '/api/chat/messages' && req.method === 'POST') {
@@ -588,8 +734,12 @@ const server = createServer(async (req, res) => {
       if (!session) return send(res, 401, { error: 'chat session not found' })
       const text = String(body.body || '').trim()
       if (!text) return send(res, 400, { error: 'message is empty' })
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim()
+      const ip = clientIpOf(req)
       if (!hitAllowed(chatMsgHits, ip, 30)) return send(res, 429, { error: 'too many requests, try again later' })
+      // A message to a closed session re-opens it.
+      if (session.status === 'closed') {
+        db.prepare("UPDATE chat_sessions SET status = 'open' WHERE id = ?").run(session.id)
+      }
       return send(res, 201, insertChatMessage(session.id, 'visitor', text.slice(0, 2000)))
     }
 
@@ -598,21 +748,61 @@ const server = createServer(async (req, res) => {
       if (!session) return send(res, 401, { error: 'chat session not found' })
       const afterId = Math.max(0, Number(url.searchParams.get('afterId') || 0))
       const rows = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? AND id > ? ORDER BY id').all(session.id, afterId)
-      return send(res, 200, { sessionId: session.id, name: session.visitor_name, messages: rows.map(chatMessageOut) })
+      // Pulling up to the latest message means the visitor has now seen
+      // every agent message there is: advance their read watermark.
+      const { maxAgent } = db.prepare("SELECT COALESCE(MAX(id), 0) AS maxAgent FROM chat_messages WHERE session_id = ? AND sender = 'agent'").get(session.id)
+      if (maxAgent > (session.visitor_read_msg_id || 0)) {
+        db.prepare('UPDATE chat_sessions SET visitor_read_msg_id = ? WHERE id = ?').run(maxAgent, session.id)
+      }
+      return send(res, 200, {
+        sessionId: session.id, name: session.visitor_name,
+        messages: rows.map(chatMessageOut), agentTyping: chatTyping(session.agent_typing_at)
+      })
+    }
+
+    // Visitor heartbeat: keeps the online flag warm and follows page moves.
+    if (req.method === 'POST' && path === '/api/chat/ping') {
+      const body = await readBody(req)
+      const session = chatSessionByToken(String(body.token || '').trim())
+      if (!session) return send(res, 401, { error: 'chat session not found' })
+      const nowIso = new Date().toISOString()
+      const page = chatPageLabel(body.page, body.pageTitle)
+      if (page && page !== session.current_page) {
+        db.prepare('UPDATE chat_sessions SET last_seen_at = ?, current_page = ?, page_views = page_views + 1 WHERE id = ?')
+          .run(nowIso, page, session.id)
+      } else {
+        db.prepare('UPDATE chat_sessions SET last_seen_at = ? WHERE id = ?').run(nowIso, session.id)
+      }
+      return send(res, 200, { ok: true })
+    }
+
+    // Visitor typing signal (the widget throttles this to one per 2s).
+    if (req.method === 'POST' && path === '/api/chat/typing') {
+      const body = await readBody(req)
+      const session = chatSessionByToken(String(body.token || '').trim())
+      if (!session) return send(res, 401, { error: 'chat session not found' })
+      const nowIso = new Date().toISOString()
+      db.prepare('UPDATE chat_sessions SET visitor_typing_at = ?, last_seen_at = ? WHERE id = ?').run(nowIso, nowIso, session.id)
+      return send(res, 200, { ok: true })
     }
 
     // ---- Admin: online chat (list sessions, read a thread, reply) ----
     if (path === '/api/admin/chat/sessions' && req.method === 'GET') {
-      const rows = db.prepare('SELECT * FROM chat_sessions ORDER BY last_msg_at DESC, id DESC').all()
+      const keyword = String(url.searchParams.get('keyword') || '').trim()
+      let rows
+      if (keyword) {
+        const like = `%${keyword}%`
+        rows = db.prepare(`SELECT * FROM chat_sessions
+          WHERE visitor_name LIKE ? OR id IN (SELECT session_id FROM chat_messages WHERE body LIKE ?)
+          ORDER BY last_msg_at DESC, id DESC`).all(like, like)
+      } else {
+        rows = db.prepare('SELECT * FROM chat_sessions ORDER BY last_msg_at DESC, id DESC').all()
+      }
       return send(res, 200, rows.map((s) => {
         const last = db.prepare('SELECT body FROM chat_messages WHERE session_id = ? ORDER BY id DESC LIMIT 1').get(s.id)
         const { n } = db.prepare("SELECT COUNT(*) AS n FROM chat_messages WHERE session_id = ? AND sender = 'visitor' AND id > ?")
           .get(s.id, s.last_agent_read_msg_id)
-        return {
-          id: s.id, visitorName: s.visitor_name, lang: s.lang,
-          createdAt: s.created_at, lastMsgAt: s.last_msg_at,
-          lastMessage: last ? last.body : '', unread: n
-        }
+        return { ...chatSessionOut(s), lastMessage: last ? last.body : '', unread: n }
       }))
     }
     const adminChatMsgMatch = path.match(/^\/api\/admin\/chat\/sessions\/(\d+)\/messages$/)
@@ -625,14 +815,9 @@ const server = createServer(async (req, res) => {
       const maxId = rows.length ? rows[rows.length - 1].id : 0
       if (maxId > session.last_agent_read_msg_id) {
         db.prepare('UPDATE chat_sessions SET last_agent_read_msg_id = ? WHERE id = ?').run(maxId, id)
+        session.last_agent_read_msg_id = maxId
       }
-      return send(res, 200, {
-        session: {
-          id: session.id, visitorName: session.visitor_name, lang: session.lang,
-          createdAt: session.created_at, lastMsgAt: session.last_msg_at
-        },
-        messages: rows.map(chatMessageOut)
-      })
+      return send(res, 200, { session: chatSessionOut(session), messages: rows.map(chatMessageOut) })
     }
     if (adminChatMsgMatch && req.method === 'POST') {
       const id = Number(adminChatMsgMatch[1])
@@ -641,7 +826,36 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const text = String(body.body || '').trim()
       if (!text) return send(res, 400, { error: 'message is empty' })
+      db.prepare("UPDATE chat_sessions SET agent_typing_at = '' WHERE id = ?").run(id)
       return send(res, 201, insertChatMessage(id, 'agent', text.slice(0, 2000)))
+    }
+    // Agent typing signal (the console throttles this to one per 2s).
+    const adminChatTypingMatch = path.match(/^\/api\/admin\/chat\/sessions\/(\d+)\/typing$/)
+    if (adminChatTypingMatch && req.method === 'POST') {
+      const id = Number(adminChatTypingMatch[1])
+      if (!db.prepare('SELECT id FROM chat_sessions WHERE id = ?').get(id)) return send(res, 404, { error: 'chat session not found' })
+      db.prepare('UPDATE chat_sessions SET agent_typing_at = ? WHERE id = ?').run(new Date().toISOString(), id)
+      return send(res, 200, { ok: true })
+    }
+    // Internal note — agents only, never sent to the visitor.
+    const adminChatNoteMatch = path.match(/^\/api\/admin\/chat\/sessions\/(\d+)\/note$/)
+    if (adminChatNoteMatch && req.method === 'PUT') {
+      const id = Number(adminChatNoteMatch[1])
+      if (!db.prepare('SELECT id FROM chat_sessions WHERE id = ?').get(id)) return send(res, 404, { error: 'chat session not found' })
+      const body = await readBody(req)
+      const note = String(body.note || '').slice(0, 2000)
+      db.prepare('UPDATE chat_sessions SET note = ? WHERE id = ?').run(note, id)
+      return send(res, 200, { ok: true, note })
+    }
+    // Lifecycle: open <-> closed (a visitor message re-opens automatically).
+    const adminChatStatusMatch = path.match(/^\/api\/admin\/chat\/sessions\/(\d+)\/status$/)
+    if (adminChatStatusMatch && req.method === 'PUT') {
+      const id = Number(adminChatStatusMatch[1])
+      if (!db.prepare('SELECT id FROM chat_sessions WHERE id = ?').get(id)) return send(res, 404, { error: 'chat session not found' })
+      const body = await readBody(req)
+      const status = body.status === 'closed' ? 'closed' : 'open'
+      db.prepare('UPDATE chat_sessions SET status = ? WHERE id = ?').run(status, id)
+      return send(res, 200, { ok: true, status })
     }
 
     // ---- Admin UI + uploaded images (static files; the UI asks for the token) ----
