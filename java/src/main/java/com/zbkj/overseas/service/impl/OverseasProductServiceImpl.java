@@ -57,6 +57,8 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
                 .eq(OverseasProduct::getIsShow, true)
                 .eq(request.getCategoryId() != null && !request.getCategoryId().isBlank(),
                         OverseasProduct::getCategoryId, request.getCategoryId())
+                .eq(request.getBrandId() != null && !request.getBrandId().isBlank(),
+                        OverseasProduct::getBrandId, request.getBrandId())
                 .orderByAsc(OverseasProduct::getSort)
                 .orderByDesc(OverseasProduct::getSales);
         List<OverseasProduct> all = list(wrapper);

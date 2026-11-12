@@ -4,7 +4,7 @@
 // Serves the public catalogue API the overseas PC showcase expects:
 //   GET  /api/health
 //   GET  /api/categories?lang=en
-//   GET  /api/products?lang=&keyword=&categoryId=&page=1&limit=48
+//   GET  /api/products?lang=&keyword=&categoryId=&brandId=&page=1&limit=48
 //   GET  /api/products/:id?lang=
 //   GET  /api/keywords
 //   GET  /api/site-config
@@ -686,10 +686,12 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/products') {
       const keyword = (url.searchParams.get('keyword') || '').trim().toLowerCase()
       const categoryId = url.searchParams.get('categoryId') || ''
+      const brandId = url.searchParams.get('brandId') || ''
       const page = Math.max(1, Number(url.searchParams.get('page') || 1))
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 48)))
       let rows = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort, id').all()
       if (categoryId) rows = rows.filter((r) => r.category_id === categoryId)
+      if (brandId) rows = rows.filter((r) => String(r.brand_id || '') === String(brandId))
       if (keyword) {
         rows = rows.filter((r) => {
           const names = JSON.parse(r.names || '{}')

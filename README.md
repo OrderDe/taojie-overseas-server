@@ -26,7 +26,7 @@ Public (no login — the overseas showcase is for anonymous visitors):
 |---|---|
 | `GET /api/health` | Liveness + product count |
 | `GET /api/categories?lang=en` | Categories with per-category product counts (`lang`: en/zh/es/fr/pt) |
-| `GET /api/products?lang=&keyword=&categoryId=&page=1&limit=48` | Product list / search |
+| `GET /api/products?lang=&keyword=&categoryId=&brandId=&page=1&limit=48` | Product list / search (filters stack) |
 | `GET /api/products/:id?lang=` | Product detail |
 | `GET /api/keywords` | Search hot words |
 | `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |

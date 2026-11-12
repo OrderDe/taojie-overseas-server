@@ -64,7 +64,7 @@ public class OverseasProductController {
     }
 
     @PermitAll
-    @Operation(summary = "海外商品列表（分页/分类/关键词）")
+    @Operation(summary = "海外商品列表（分页/分类/品牌/关键词）")
     @GetMapping("/products")
     public CommonResult<CommonPage<ProductResponse>> products(ProductSearchRequest request) {
         return CommonResult.success(productService.pageForFront(request));

@@ -34,7 +34,7 @@
 ```
 GET  /api/health
 GET  /api/categories?lang=en
-GET  /api/products?lang=&keyword=&categoryId=&page=&limit=     -> CommonPage
+GET  /api/products?lang=&keyword=&categoryId=&brandId=&page=&limit=     -> CommonPage
 GET  /api/products/{id}?lang=
 GET  /api/keywords?lang=
 GET  /api/site-config

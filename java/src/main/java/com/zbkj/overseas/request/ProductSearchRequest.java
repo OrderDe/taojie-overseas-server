@@ -19,6 +19,9 @@ public class ProductSearchRequest {
     @Schema(description = "分类 id")
     private String categoryId;
 
+    @Schema(description = "品牌 id（与分类/关键词可叠加）")
+    private String brandId;
+
     @Schema(description = "页码，从 1 开始")
     private Integer page = 1;
 
