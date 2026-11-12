@@ -1,0 +1,9 @@
+.git
+node_modules
+data/app.db
+data/app.db-journal
+data/uploads
+.env
+*.log
+java
+tools

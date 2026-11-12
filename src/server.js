@@ -586,13 +586,14 @@ function productValues(body) {
 // Translation happens once, at data-entry time: the admin form sends the
 // Chinese name and gets the other languages back to store in the names JSON — the
 // storefront keeps reading the DB, nothing is translated at runtime.
-// Provider is configurable: TRANSLATE_PROVIDER=libre + LIBRETRANSLATE_URL
-// uses a self-hosted LibreTranslate; the default is the free MyMemory API
-// (set TRANSLATE_EMAIL to raise its daily quota).
+// Default provider is the self-hosted LibreTranslate (LIBRETRANSLATE_URL,
+// default http://127.0.0.1:5000 — see docker-compose.yml). The free
+// MyMemory API is kept as an explicit opt-in fallback:
+// TRANSLATE_PROVIDER=mymemory (set TRANSLATE_EMAIL to raise its quota).
+// There is NO silent fallback: if the self-hosted service does not support
+// a language, that language lands in `errors` like any other failure.
 // Supported target languages (source is always zh). Keep in step with the
 // admin language registry (taojie-overseas-admin/src/utils/langs.js).
-// All eleven were live-tested against MyMemory with the bare code as the
-// langpair target (ms and ar included — no regional suffix needed).
 const TRANSLATE_TARGETS = ['en', 'es', 'fr', 'pt', 'id', 'ms', 'vi', 'th', 'ar', 'ru', 'de']
 const TRANSLATE_TIMEOUT_MS = 6000
 
@@ -625,7 +626,7 @@ async function translateViaMyMemory(text, target) {
 }
 
 async function translateViaLibre(text, target) {
-  const base = (process.env.LIBRETRANSLATE_URL || '').replace(/\/$/, '')
+  const base = (process.env.LIBRETRANSLATE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '')
   const payload = { q: text, source: 'zh', target, format: 'text' }
   const libreKey = process.env['LIBRETRANSLATE_' + 'API_KEY']
   if (libreKey) payload.api_key = libreKey
@@ -642,10 +643,11 @@ async function translateViaLibre(text, target) {
 }
 
 async function translateOne(text, target) {
-  if (process.env.TRANSLATE_PROVIDER === 'libre' && process.env.LIBRETRANSLATE_URL) {
-    return translateViaLibre(text, target)
+  // Self-hosted LibreTranslate is the default; MyMemory only when asked for.
+  if (process.env.TRANSLATE_PROVIDER === 'mymemory') {
+    return translateViaMyMemory(text, target)
   }
-  return translateViaMyMemory(text, target)
+  return translateViaLibre(text, target)
 }
 
 const server = createServer(async (req, res) => {

@@ -94,13 +94,21 @@ ms, vi, th, ar, ru, de — the same list as the admin language registry
 back as `errors[code] = "unsupported"` and are never fetched.
 Provider env vars:
 
-- default: free **MyMemory** API; set `TRANSLATE_EMAIL` to raise its
-  daily quota.
-- `TRANSLATE_PROVIDER=libre` + `LIBRETRANSLATE_URL` (optional
-  `LIBRETRANSLATE_API_KEY`): a self-hosted LibreTranslate instance.
+- **default: self-hosted LibreTranslate** — `LIBRETRANSLATE_URL`
+  (default `http://127.0.0.1:5000`, optional `LIBRETRANSLATE_API_KEY`
+  when the instance requires one). `docker compose up -d` in this repo
+  starts it (service `libretranslate`, bound to localhost only, models
+  limited to the twelve languages via `LT_LOAD_ONLY`); the backend
+  reaches it over the loopback/internal network, it is never exposed
+  publicly.
+- opt-in fallback: `TRANSLATE_PROVIDER=mymemory` uses the free
+  **MyMemory** API instead; set `TRANSLATE_EMAIL` to raise its daily
+  quota.
 
-A language that fails is reported in `errors` and left for manual entry;
-the endpoint only returns 502 when every target failed.
+There is no silent provider fallback: a language the self-hosted
+service does not support is reported in `errors` (and left for manual
+entry) exactly like any other failure; the endpoint only returns 502
+when every target failed.
 
 ## Importing real products (from tjmall)
 

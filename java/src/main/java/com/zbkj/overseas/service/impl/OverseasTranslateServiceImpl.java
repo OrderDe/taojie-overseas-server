@@ -29,11 +29,14 @@ import java.util.regex.Pattern;
 /**
  * Mirrors the Node implementation: translation happens once at data-entry
  * time and the results are stored in the names JSON — the storefront is
- * never translated at runtime. Provider is configurable:
- * TRANSLATE_PROVIDER=libre + LIBRETRANSLATE_URL uses a self-hosted
- * LibreTranslate; default is the free MyMemory API (TRANSLATE_EMAIL
- * raises its daily quota). Each language gets a 6s timeout, the four
- * targets run in parallel, and a single failure lands in `errors`.
+ * never translated at runtime. The default provider is the self-hosted
+ * LibreTranslate (LIBRETRANSLATE_URL, default http://127.0.0.1:5000 —
+ * see docker-compose.yml). The free MyMemory API is kept as an explicit
+ * opt-in fallback: TRANSLATE_PROVIDER=mymemory (TRANSLATE_EMAIL raises
+ * its daily quota). There is NO silent fallback: a language the
+ * self-hosted service does not support lands in `errors` like any other
+ * failure. Each language gets a 6s timeout, targets run in parallel,
+ * and a single failure lands in `errors`.
  */
 @Slf4j
 @Service
@@ -41,19 +44,17 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
 
     // Supported target languages (source is always zh). Keep in step with
     // the admin language registry (taojie-overseas-admin/src/utils/langs.js).
-    // All eleven were live-tested against MyMemory with the bare code as
-    // the langpair target (ms and ar included — no regional suffix needed).
     private static final List<String> ALL_TARGETS =
             List.of("en", "es", "fr", "pt", "id", "ms", "vi", "th", "ar", "ru", "de");
     private static final int TIMEOUT_MS = 6000;
 
-    @Value("${TRANSLATE_PROVIDER:mymemory}")
+    @Value("${TRANSLATE_PROVIDER:libre}")
     private String provider;
 
     @Value("${TRANSLATE_EMAIL:}")
     private String translateEmail;
 
-    @Value("${LIBRETRANSLATE_URL:}")
+    @Value("${LIBRETRANSLATE_URL:http://127.0.0.1:5000}")
     private String libreUrl;
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -114,10 +115,11 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
     }
 
     private String translateOne(String text, String target) {
-        if ("libre".equalsIgnoreCase(provider) && StrUtil.isNotBlank(libreUrl)) {
-            return translateViaLibre(text, target);
+        // Self-hosted LibreTranslate is the default; MyMemory only when asked for.
+        if ("mymemory".equalsIgnoreCase(provider)) {
+            return translateViaMyMemory(text, target);
         }
-        return translateViaMyMemory(text, target);
+        return translateViaLibre(text, target);
     }
 
     private String translateViaMyMemory(String text, String target) {
@@ -145,7 +147,7 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
                         + StrUtil.blankToDefault(json.getStr("responseDetails"), "quota or upstream error"));
             }
             JSONObject data = json.getJSONObject("responseData");
-            String out = data == null ? null : data.getStr("translatedText");
+            String out = data == null ? "" : data.getStr("translatedText");
             if (StrUtil.isBlank(out)) {
                 throw new RuntimeException("mymemory: empty result");
             }
