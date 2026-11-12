@@ -176,7 +176,8 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
 
     @Override
     public String requiredPerm(String path) {
-        if (path.equals("/api/admin/me") || path.equals("/api/admin/logout")) {
+        if (path.equals("/api/admin/me") || path.equals("/api/admin/logout")
+                || path.equals("/api/admin/fx/rates")) {
             return null;
         }
         if (path.startsWith("/api/admin/users") || path.startsWith("/api/admin/roles")

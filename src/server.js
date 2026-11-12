@@ -28,6 +28,7 @@
 //   GET|POST|PUT|DELETE /api/admin/roles[/:id]        (roles = menu permissions)
 //   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url}; images <= 6 MB, videos mp4/webm/mov <= 50 MB)
 //   POST /api/admin/translate          (zh name -> 11 target languages, entry-time only)
+//   GET  /api/admin/fx/rates?base=CNY  (FX rates for the price calculator; any admin account, 12h cache)
 //   GET  /admin                        (admin UI, static files in admin/)
 //   GET  /uploads/<file>               (uploaded product images / videos)
 //
@@ -89,6 +90,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS site_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE IF NOT EXISTS fx_rates (
+    base TEXT PRIMARY KEY,
+    rates TEXT NOT NULL DEFAULT '{}',
+    source_updated_at TEXT NOT NULL DEFAULT '',
+    fetched_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS brands (
     id TEXT PRIMARY KEY,
@@ -360,7 +367,7 @@ function isAdmin(req) {
 // Which permission a path needs (undefined = public login, null = any account).
 function requiredPerm(path) {
   if (path === '/api/admin/login') return undefined
-  if (path === '/api/admin/me' || path === '/api/admin/logout') return null
+  if (path === '/api/admin/me' || path === '/api/admin/logout' || path === '/api/admin/fx/rates') return null
   if (path.startsWith('/api/admin/users') || path.startsWith('/api/admin/roles') || path === '/api/admin/permissions') return 'users'
   if (path.startsWith('/api/admin/products') || path.startsWith('/api/admin/brands') || path === '/api/admin/upload') return 'products'
   if (path.startsWith('/api/admin/categories')) return 'categories'
@@ -659,6 +666,52 @@ async function translateOne(text, target) {
   return translateViaLibre(text, target)
 }
 
+// ---- FX rates for the admin price calculator ----
+// Source: open.er-api.com (free, no API key, ~160 currencies, updated
+// daily). Rates are cached per base currency in the fx_rates table for
+// 12 hours; when a refresh fails, the stale cache is served (flagged
+// `stale`) instead of failing the tool — only "no cache + fetch failed"
+// is a 502. All conversion math happens in the admin page.
+const FX_TTL_MS = 12 * 60 * 60 * 1000
+const FX_TIMEOUT_MS = 6000
+
+async function fetchFxRates(base) {
+  const res = await fetch(`https://open.er-api.com/v6/latest/${base}`, {
+    signal: AbortSignal.timeout(FX_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`er-api HTTP ${res.status}`)
+  const data = await res.json()
+  if (!data || data.result !== 'success' || !data.rates || typeof data.rates !== 'object') {
+    throw new Error('er-api: unexpected response')
+  }
+  const sourceUpdatedAt = data.time_last_update_unix
+    ? new Date(data.time_last_update_unix * 1000).toISOString()
+    : String(data.time_last_update_utc || '')
+  return { rates: data.rates, sourceUpdatedAt }
+}
+
+async function getFxRates(base) {
+  const row = db.prepare('SELECT * FROM fx_rates WHERE base = ?').get(base)
+  const cached = row
+    ? { base, rates: parseJsonCol(row.rates, {}), sourceUpdatedAt: row.source_updated_at, fetchedAt: row.fetched_at }
+    : null
+  if (cached && Date.now() - Date.parse(cached.fetchedAt) < FX_TTL_MS) {
+    return { ...cached, stale: false, fromCache: true }
+  }
+  try {
+    const fresh = await fetchFxRates(base)
+    const fetchedAt = new Date().toISOString()
+    db.prepare(`INSERT INTO fx_rates (base, rates, source_updated_at, fetched_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(base) DO UPDATE SET rates = excluded.rates,
+        source_updated_at = excluded.source_updated_at, fetched_at = excluded.fetched_at`)
+      .run(base, JSON.stringify(fresh.rates), fresh.sourceUpdatedAt, fetchedAt)
+    return { base, rates: fresh.rates, sourceUpdatedAt: fresh.sourceUpdatedAt, fetchedAt, stale: false, fromCache: false }
+  } catch (e) {
+    if (cached) return { ...cached, stale: true, fromCache: true }
+    throw e
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
   const path = url.pathname.replace(/\/$/, '') || '/'
@@ -774,6 +827,20 @@ const server = createServer(async (req, res) => {
         return send(res, 502, { error: 'translation service unavailable', errors })
       }
       return send(res, 200, { translations, errors })
+    }
+
+    // FX rates for the admin price calculator. The admin gate above has
+    // already required a login session or the root token (no specific
+    // menu permission — requiredPerm returns null for this path, same as
+    // the translate endpoint, so sales staff can use it too).
+    if (req.method === 'GET' && path === '/api/admin/fx/rates') {
+      const base = String(url.searchParams.get('base') || 'CNY').toUpperCase()
+      if (!/^[A-Z]{3}$/.test(base)) return send(res, 400, { error: 'base must be a 3-letter currency code' })
+      try {
+        return send(res, 200, await getFxRates(base))
+      } catch {
+        return send(res, 502, { error: 'exchange rate service unavailable' })
+      }
     }
 
     if (req.method === 'POST' && path === '/api/rfq') {

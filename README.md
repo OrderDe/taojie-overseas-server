@@ -65,6 +65,7 @@ people under 用户与角色.
 | `POST /api/admin/upload` (perm `products`) | Image/video upload as `{filename, dataBase64}` → `{url}` (images png/jpg/webp/gif ≤ 6 MB; videos mp4/webm/mov ≤ 50 MB; files land in `data/uploads/`, served at `/uploads/`) |
 | `GET\|POST /api/admin/users`, `PUT\|DELETE /api/admin/users/:id` (perm `users`) | Admin accounts (create, assign role, enable/disable, reset password; last super admin is protected) |
 | `GET\|POST /api/admin/roles`, `PUT\|DELETE /api/admin/roles/:id`, `GET /api/admin/permissions` (perm `users`) | Roles = menu-permission sets (built-in super role is locked to all permissions) |
+| `GET /api/admin/fx/rates?base=CNY` (any admin account) | FX rates for the admin price calculator: `{base, rates, sourceUpdatedAt, fetchedAt, stale, fromCache}`. Source is open.er-api.com (free, no key, ~160 currencies, daily); cached per base in the `fx_rates` table for 12h; a failed refresh serves the stale cache flagged `stale`, and only no-cache + fetch-failed is a 502 |
 
 ## Admin UI （后台管理界面）
 

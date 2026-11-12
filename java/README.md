@@ -75,6 +75,7 @@ GET|POST /api/admin/brands          品牌列表（管理版）/ 新建品牌（
 PUT|DELETE /api/admin/brands/{id}   修改 / 删除品牌（下有商品时拒绝删除；存量库需跑 sql/admin-brands.sql）
 POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}（需 products 权限）
 POST /api/admin/translate           名称自动翻译 {text, targets?} -> {translations, errors}（任意登录态；录入时译一次存 names JSON；环境变量同 Node 版：默认自托管 LibreTranslate，LIBRETRANSLATE_URL 默认 http://127.0.0.1:5000；TRANSLATE_PROVIDER=mymemory 才切回 MyMemory，TRANSLATE_EMAIL 提其配额；无静默回退，不支持的语种进 errors）
+GET  /api/admin/fx/rates            汇率表 ?base=CNY -> {base, rates, sourceUpdatedAt, fetchedAt, stale, fromCache}（任意登录态；后台「汇率换算」试算工具用；数据源 open.er-api.com 免费无 key，按 base 落库缓存 12 小时，拉取失败回退旧缓存并标 stale，无缓存又失败才 502；存量库需跑 sql/fx-rates.sql）
 GET|POST /api/admin/users           后台用户列表 / 新建（需 users 权限）
 PUT|DELETE /api/admin/users/{id}    编辑（可重置密码）/ 删除（最后一个超级管理员受保护）
 GET|POST /api/admin/roles           角色列表 / 新建（需 users 权限）

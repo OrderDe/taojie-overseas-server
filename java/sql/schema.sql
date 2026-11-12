@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS eb_overseas_site_config (
     PRIMARY KEY (config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外站点配置（键值表，同 eb_system_config 模式）';
 
+-- 汇率缓存（后台「汇率换算」试算工具）。已部署的库改跑 sql/fx-rates.sql。
+-- 数据源 open.er-api.com，按 base 一行，12 小时内直接用缓存。
+CREATE TABLE IF NOT EXISTS eb_overseas_fx_rate (
+    base              VARCHAR(3)  NOT NULL COMMENT '基准币种代码，如 CNY',
+    rates             TEXT        NOT NULL COMMENT '汇率表 JSON {代码: 每 1 基准币可换数量}',
+    source_updated_at VARCHAR(40) NOT NULL DEFAULT '' COMMENT '数据源更新时间（ISO-8601）',
+    fetched_at        VARCHAR(40) NOT NULL DEFAULT '' COMMENT '我方拉取时间（ISO-8601）',
+    PRIMARY KEY (base)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '汇率缓存（后台试算工具）';
+
 -- 后台账号体系（用户登录 + 角色菜单权限）。已部署的库改跑 sql/admin-rbac.sql。
 -- 角色 permissions 是菜单权限 key 的 JSON 数组：products/categories/rfq/config/users，["*"] = 全部。
 -- 初始管理员账号不写在这里：应用启动时若用户表为空，用 ADMIN_TOKEN 作为密码创建 admin 账号。
