@@ -27,6 +27,7 @@
 //   GET|POST|PUT|DELETE /api/admin/users[/:id]        (admin accounts)
 //   GET|POST|PUT|DELETE /api/admin/roles[/:id]        (roles = menu permissions)
 //   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url})
+//   POST /api/admin/translate          (zh name -> 11 target languages, entry-time only)
 //   GET  /admin                        (admin UI, static files in admin/)
 //   GET  /uploads/<file>               (uploaded product images)
 //
@@ -581,6 +582,72 @@ function productValues(body) {
   }
 }
 
+// ---- Name auto-translate (admin data entry) ----
+// Translation happens once, at data-entry time: the admin form sends the
+// Chinese name and gets the other languages back to store in the names JSON — the
+// storefront keeps reading the DB, nothing is translated at runtime.
+// Provider is configurable: TRANSLATE_PROVIDER=libre + LIBRETRANSLATE_URL
+// uses a self-hosted LibreTranslate; the default is the free MyMemory API
+// (set TRANSLATE_EMAIL to raise its daily quota).
+// Supported target languages (source is always zh). Keep in step with the
+// admin language registry (taojie-overseas-admin/src/utils/langs.js).
+// All eleven were live-tested against MyMemory with the bare code as the
+// langpair target (ms and ar included — no regional suffix needed).
+const TRANSLATE_TARGETS = ['en', 'es', 'fr', 'pt', 'id', 'ms', 'vi', 'th', 'ar', 'ru', 'de']
+const TRANSLATE_TIMEOUT_MS = 6000
+
+function decodeHtmlEntities(s) {
+  return String(s)
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}
+
+async function translateViaMyMemory(text, target) {
+  const pair = encodeURIComponent(`zh-CN|${target}`)
+  let u = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`
+  if (process.env.TRANSLATE_EMAIL) u += `&de=${encodeURIComponent(process.env.TRANSLATE_EMAIL)}`
+  const res = await fetch(u, { signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS) })
+  if (!res.ok) throw new Error(`mymemory HTTP ${res.status}`)
+  const data = await res.json()
+  // On quota exhaustion MyMemory still returns 200-shaped JSON but with
+  // responseStatus 403 and a warning sentence as the "translation".
+  if (!data || Number(data.responseStatus) !== 200) {
+    throw new Error(`mymemory: ${(data && data.responseDetails) || 'quota or upstream error'}`)
+  }
+  const out = data.responseData && data.responseData.translatedText
+  if (!out) throw new Error('mymemory: empty result')
+  return decodeHtmlEntities(out).trim()
+}
+
+async function translateViaLibre(text, target) {
+  const base = (process.env.LIBRETRANSLATE_URL || '').replace(/\/$/, '')
+  const payload = { q: text, source: 'zh', target, format: 'text' }
+  const libreKey = process.env['LIBRETRANSLATE_' + 'API_KEY']
+  if (libreKey) payload.api_key = libreKey
+  const res = await fetch(`${base}/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`libretranslate HTTP ${res.status}`)
+  const data = await res.json()
+  if (!data || !data.translatedText) throw new Error('libretranslate: empty result')
+  return decodeHtmlEntities(data.translatedText).trim()
+}
+
+async function translateOne(text, target) {
+  if (process.env.TRANSLATE_PROVIDER === 'libre' && process.env.LIBRETRANSLATE_URL) {
+    return translateViaLibre(text, target)
+  }
+  return translateViaMyMemory(text, target)
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
   const path = url.pathname.replace(/\/$/, '') || '/'
@@ -662,6 +729,38 @@ const server = createServer(async (req, res) => {
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
+    }
+
+    // Name auto-translate for the admin forms. The admin gate above has
+    // already required a login session or the root token (no specific menu
+    // permission — products, categories and brands all use it). A single
+    // language failing lands in `errors`; only a total failure is a 502.
+    if (req.method === 'POST' && path === '/api/admin/translate') {
+      const body = await readBody(req)
+      const text = String(body.text || '').trim()
+      if (!text) return send(res, 400, { error: 'text is required' })
+      if (text.length > 500) return send(res, 400, { error: 'text too long (max 500 chars)' })
+      const wanted = Array.isArray(body.targets) && body.targets.length ? body.targets : TRANSLATE_TARGETS
+      const requested = [...new Set(wanted.map((t) => String(t)).filter(Boolean))]
+      const targets = requested.filter((t) => TRANSLATE_TARGETS.includes(t))
+      const translations = {}
+      const errors = {}
+      // Codes outside the supported list are never fetched, just reported.
+      for (const t of requested) if (!TRANSLATE_TARGETS.includes(t)) errors[t] = 'unsupported'
+      if (!targets.length) {
+        return send(res, 502, { error: 'translation service unavailable', errors })
+      }
+      await Promise.all(targets.map(async (t) => {
+        try {
+          translations[t] = await translateOne(text, t)
+        } catch (e) {
+          errors[t] = String((e && e.message) || e)
+        }
+      }))
+      if (!Object.keys(translations).length) {
+        return send(res, 502, { error: 'translation service unavailable', errors })
+      }
+      return send(res, 200, { translations, errors })
     }
 
     if (req.method === 'POST' && path === '/api/rfq') {

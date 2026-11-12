@@ -81,6 +81,27 @@ looks identical whichever backend is deployed.
 New RFQs are also POSTed as JSON to `RFQ_WEBHOOK_URL` when set (mail /
 WhatsApp notification gateway hook).
 
+## Name auto-translate (admin data entry)
+
+The admin product/category/brand forms have an **自动翻译** button:
+fill in only the Chinese name, and `POST /api/admin/translate`
+(`{ text, targets? }` → `{ translations, errors }`, any admin login)
+fills the other languages once, at entry time — the results are stored
+in the `names` JSON like hand-typed ones, and the storefront is
+unchanged. Supported targets (source is always zh): en, es, fr, pt, id,
+ms, vi, th, ar, ru, de — the same list as the admin language registry
+(`src/utils/langs.js` in taojie-overseas-admin); codes outside it come
+back as `errors[code] = "unsupported"` and are never fetched.
+Provider env vars:
+
+- default: free **MyMemory** API; set `TRANSLATE_EMAIL` to raise its
+  daily quota.
+- `TRANSLATE_PROVIDER=libre` + `LIBRETRANSLATE_URL` (optional
+  `LIBRETRANSLATE_API_KEY`): a self-hosted LibreTranslate instance.
+
+A language that fails is reported in `errors` and left for manual entry;
+the endpoint only returns 502 when every target failed.
+
 ## Importing real products (from tjmall)
 
 ```bash
