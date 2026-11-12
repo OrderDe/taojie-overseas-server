@@ -33,6 +33,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("announcement", "");
         DEFAULTS.put("showRfq", true);
         DEFAULTS.put("showCart", false);
+        DEFAULTS.put("showDealer", false);
         DEFAULTS.put("whatsapp", "");
         DEFAULTS.put("email", "");
         DEFAULTS.put("currency", "$");
@@ -83,6 +84,9 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if (request.getShowCart() != null) {
             put("showCart", String.valueOf(request.getShowCart()));
         }
+        if (request.getShowDealer() != null) {
+            put("showDealer", String.valueOf(request.getShowDealer()));
+        }
         // navItems is stored as a JSON string, same as the multi-language
         // names elsewhere; an empty list is a real value (clears the nav).
         if (request.getNavItems() != null) {
@@ -106,7 +110,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
     }
 
     private Object parseValue(String key, String value) {
-        if ("showRfq".equals(key) || "showCart".equals(key)) {
+        if ("showRfq".equals(key) || "showCart".equals(key) || "showDealer".equals(key)) {
             return Boolean.parseBoolean(value);
         }
         if ("navItems".equals(key)) {
