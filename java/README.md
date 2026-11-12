@@ -39,11 +39,14 @@ GET  /api/products/{id}?lang=
 GET  /api/keywords?lang=
 GET  /api/site-config
 POST /api/rfq            { name*, contact*, company, country, productName, quantity, message }
+POST /api/chat/start     { name?, token?, lang? } -> { sessionId, token, name }（带已知 token 则复用会话）
+POST /api/chat/messages  { token*, body* } 访客发消息（按 IP 限流）
+GET  /api/chat/messages?token=&afterId=     访客拉本会话消息（afterId 增量）
 ```
 
 管理（拦截器 `AdminTokenInterceptor`）：先 `POST /api/admin/login` 用账号+密码
 登录拿到会话令牌，之后请求头带 `x-admin-token: <会话令牌>`。每个账号有角色，
-角色带菜单权限（products/categories/rfq/config/users），接口按区域校验、
+角色带菜单权限（products/categories/rfq/chat/config/users），接口按区域校验、
 没有权限返回 403。`ADMIN_TOKEN` 本身仍可作应急超级令牌（全部权限）。
 首次启动种子三个角色（超级管理员/运营/外贸员）；用户表为空时按 `ADMIN_TOKEN`
 生成初始账号 **admin**（密码就是该令牌），登录后在「用户与角色」里改密码、加人。
@@ -54,6 +57,9 @@ POST /api/admin/login               登录（免拦截）{username, password} ->
 POST /api/admin/logout              退出（作废会话）
 GET  /api/admin/me                  当前账号与菜单权限
 GET  /api/admin/rfq                 最新 200 条询价（需 rfq 权限）
+GET  /api/admin/chat/sessions       聊天会话列表：访客名/最后消息预览/未读数（需 chat 权限）
+GET  /api/admin/chat/sessions/{id}/messages  会话全部消息（读取即清未读）
+POST /api/admin/chat/sessions/{id}/messages  以客服身份回复 {body}（存量库需跑 sql/chat.sql）
 PUT  /api/admin/site-config         保存站点配置（需 config 权限）
 GET|POST /api/admin/products        商品列表（管理版）/ 新建商品（需 products 权限）
 PUT|DELETE /api/admin/products/{id} 修改 / 删除商品

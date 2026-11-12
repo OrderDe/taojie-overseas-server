@@ -112,5 +112,31 @@ CREATE TABLE IF NOT EXISTS eb_overseas_admin_session (
 
 INSERT IGNORE INTO eb_overseas_admin_role (name, permissions, builtin) VALUES
     ('超级管理员', '["*"]', 1),
-    ('运营', '["products", "categories", "rfq", "config"]', 0),
-    ('外贸员', '["rfq"]', 0);
+    ('运营', '["products", "categories", "rfq", "chat", "config"]', 0),
+    ('外贸员', '["rfq", "chat"]', 0);
+
+-- 在线聊天（访客端悬浮聊天框 + 后台实时查看/回复）。已部署的库改跑 sql/chat.sql。
+-- 访客身份只靠随机 token（浏览器 localStorage 保存），不建账号；
+-- last_agent_read_msg_id 是客服已读水位线，会话列表的未读数由此算出。
+CREATE TABLE IF NOT EXISTS eb_overseas_chat_session (
+    id                     BIGINT       NOT NULL AUTO_INCREMENT,
+    visitor_token          VARCHAR(128) NOT NULL COMMENT '访客随机 token（唯一身份）',
+    visitor_name           VARCHAR(64)  NOT NULL DEFAULT '访客',
+    lang                   VARCHAR(8)   NOT NULL DEFAULT 'en',
+    last_agent_read_msg_id BIGINT       NOT NULL DEFAULT 0 COMMENT '客服已读到的最大消息 id',
+    last_msg_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_visitor_token (visitor_token),
+    KEY idx_last_msg_at (last_msg_at)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外在线聊天会话';
+
+CREATE TABLE IF NOT EXISTS eb_overseas_chat_message (
+    id          BIGINT   NOT NULL AUTO_INCREMENT,
+    session_id  BIGINT   NOT NULL,
+    sender      VARCHAR(16) NOT NULL COMMENT 'visitor 访客 / agent 客服',
+    body        TEXT     NOT NULL,
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_session (session_id, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外在线聊天消息';

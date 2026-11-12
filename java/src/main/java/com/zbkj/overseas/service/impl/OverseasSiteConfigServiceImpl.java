@@ -1,6 +1,7 @@
 package com.zbkj.overseas.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.zbkj.overseas.dao.OverseasSiteConfigDao;
 import com.zbkj.overseas.model.OverseasSiteConfig;
@@ -8,6 +9,7 @@ import com.zbkj.overseas.request.SiteConfigRequest;
 import com.zbkj.overseas.service.OverseasSiteConfigService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,6 +35,15 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("whatsapp", "");
         DEFAULTS.put("email", "");
         DEFAULTS.put("currency", "$");
+        // Homepage content blocks; empty = storefront uses theme/i18n defaults.
+        DEFAULTS.put("navItems", new ArrayList<>());
+        DEFAULTS.put("heroEyebrow", "");
+        DEFAULTS.put("dealerTitle", "");
+        DEFAULTS.put("dealerText", "");
+        DEFAULTS.put("dealerButton", "");
+        DEFAULTS.put("hotline", "");
+        DEFAULTS.put("storyTitle", "");
+        DEFAULTS.put("storyText", "");
     }
 
     @Override
@@ -56,8 +67,20 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("whatsapp", request.getWhatsapp());
         putIfPresent("email", request.getEmail());
         putIfPresent("currency", request.getCurrency());
+        putIfPresent("heroEyebrow", request.getHeroEyebrow());
+        putIfPresent("dealerTitle", request.getDealerTitle());
+        putIfPresent("dealerText", request.getDealerText());
+        putIfPresent("dealerButton", request.getDealerButton());
+        putIfPresent("hotline", request.getHotline());
+        putIfPresent("storyTitle", request.getStoryTitle());
+        putIfPresent("storyText", request.getStoryText());
         if (request.getShowRfq() != null) {
             put("showRfq", String.valueOf(request.getShowRfq()));
+        }
+        // navItems is stored as a JSON string, same as the multi-language
+        // names elsewhere; an empty list is a real value (clears the nav).
+        if (request.getNavItems() != null) {
+            put("navItems", JSONUtil.toJsonStr(request.getNavItems()));
         }
         return getConfigMap();
     }
@@ -79,6 +102,16 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
     private Object parseValue(String key, String value) {
         if ("showRfq".equals(key)) {
             return Boolean.parseBoolean(value);
+        }
+        if ("navItems".equals(key)) {
+            if (StrUtil.isBlank(value)) {
+                return new ArrayList<>();
+            }
+            try {
+                return JSONUtil.toList(value, SiteConfigRequest.NavItem.class);
+            } catch (Exception e) {
+                return new ArrayList<>();
+            }
         }
         return value == null ? "" : value;
     }

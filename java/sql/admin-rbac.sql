@@ -42,5 +42,5 @@ CREATE TABLE IF NOT EXISTS eb_overseas_admin_session (
 
 INSERT IGNORE INTO eb_overseas_admin_role (name, permissions, builtin) VALUES
     ('超级管理员', '["*"]', 1),
-    ('运营', '["products", "categories", "rfq", "config"]', 0),
-    ('外贸员', '["rfq"]', 0);
+    ('运营', '["products", "categories", "rfq", "chat", "config"]', 0),
+    ('外贸员', '["rfq", "chat"]', 0);

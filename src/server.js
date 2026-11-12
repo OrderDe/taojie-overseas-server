@@ -9,6 +9,10 @@
 //   GET  /api/keywords
 //   GET  /api/site-config
 //   POST /api/rfq                      (lead capture, stored in SQLite)
+//   POST /api/chat/start               (visitor chat: create/reuse a session)
+//   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
+//   GET  /api/admin/chat/sessions      (chat sessions + unread counts)
+//   GET|POST /api/admin/chat/sessions/:id/messages  (read thread / reply)
 //   GET  /api/admin/rfq                (header: x-admin-token)
 //   PUT  /api/admin/site-config        (header: x-admin-token)
 //   POST /api/admin/login              (username+password -> session token)
@@ -106,6 +110,22 @@ db.exec(`
     user_id INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    visitor_token TEXT NOT NULL UNIQUE,
+    visitor_name TEXT NOT NULL DEFAULT '访客',
+    lang TEXT NOT NULL DEFAULT 'en',
+    created_at TEXT NOT NULL,
+    last_msg_at TEXT NOT NULL DEFAULT '',
+    last_agent_read_msg_id INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    sender TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `)
 // Products gained a sort column after the first release; add it in place.
 try { db.exec('ALTER TABLE products ADD COLUMN sort INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
@@ -137,7 +157,11 @@ seedIfEmpty()
 
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
-  announcement: '', showRfq: true, whatsapp: '', email: '', currency: 'USD'
+  announcement: '', showRfq: true, whatsapp: '', email: '', currency: 'USD',
+  // Homepage content blocks (admin-editable; empty = storefront falls back
+  // to its built-in theme/i18n defaults). navItems is [{label, link}].
+  navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
+  dealerButton: '', hotline: '', storyTitle: '', storyText: ''
 }
 function getConfig() {
   const row = db.prepare('SELECT data FROM site_config WHERE id = 1').get()
@@ -213,6 +237,7 @@ const PERMISSIONS = [
   { key: 'products', label: '商品管理' },
   { key: 'categories', label: '分类管理' },
   { key: 'rfq', label: '询价列表' },
+  { key: 'chat', label: '在线聊天' },
   { key: 'config', label: '站点配置' },
   { key: 'users', label: '用户与角色' }
 ]
@@ -237,8 +262,8 @@ function seedAdminAccounts() {
   if (n === 0) {
     const ins = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, ?)')
     ins.run('超级管理员', JSON.stringify(['*']), 1)
-    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'config']), 0)
-    ins.run('外贸员', JSON.stringify(['rfq']), 0)
+    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config']), 0)
+    ins.run('外贸员', JSON.stringify(['rfq', 'chat']), 0)
   }
   const { n: userCount } = db.prepare('SELECT COUNT(*) AS n FROM admin_users').get()
   if (userCount === 0 && ADMIN_TOKEN) {
@@ -294,6 +319,7 @@ function requiredPerm(path) {
   if (path.startsWith('/api/admin/products') || path.startsWith('/api/admin/brands') || path === '/api/admin/upload') return 'products'
   if (path.startsWith('/api/admin/categories')) return 'categories'
   if (path === '/api/admin/rfq') return 'rfq'
+  if (path.startsWith('/api/admin/chat')) return 'chat'
   if (path === '/api/admin/site-config') return 'config'
   return null
 }
@@ -316,6 +342,37 @@ function rfqAllowed(ip) {
   arr.push(now)
   rfqHits.set(ip, arr)
   return true
+}
+
+// ---- Online chat ----
+// A visitor is identified only by a random token the widget keeps in
+// localStorage (no account). Agents read/reply from the admin chat page;
+// a session tracks how far the agent has read so the list can show the
+// count of unread visitor messages.
+function hitAllowed(store, ip, maxPerMinute) {
+  const now = Date.now()
+  const arr = (store.get(ip) || []).filter((t) => now - t < 60000)
+  if (arr.length >= maxPerMinute) return false
+  arr.push(now)
+  store.set(ip, arr)
+  return true
+}
+const chatStartHits = new Map()
+const chatMsgHits = new Map()
+
+function chatSessionByToken(token) {
+  if (!token) return undefined
+  return db.prepare('SELECT * FROM chat_sessions WHERE visitor_token = ?').get(token)
+}
+function chatMessageOut(m) {
+  return { id: m.id, sessionId: m.session_id, sender: m.sender, body: m.body, createdAt: m.created_at }
+}
+function insertChatMessage(sessionId, sender, body) {
+  const nowIso = new Date().toISOString()
+  const info = db.prepare('INSERT INTO chat_messages (session_id, sender, body, created_at) VALUES (?, ?, ?, ?)')
+    .run(sessionId, sender, body, nowIso)
+  db.prepare('UPDATE chat_sessions SET last_msg_at = ? WHERE id = ?').run(nowIso, sessionId)
+  return { id: Number(info.lastInsertRowid), sessionId, sender, body, createdAt: nowIso }
 }
 
 // ---- Admin: catalogue management + static files (admin UI, uploads) ----
@@ -469,6 +526,11 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const merged = { ...getConfig() }
       for (const k of Object.keys(DEFAULT_CONFIG)) if (body[k] !== undefined) merged[k] = body[k]
+      // navItems must stay an array of {label, link}; drop anything else.
+      if (!Array.isArray(merged.navItems)) merged.navItems = []
+      merged.navItems = merged.navItems
+        .filter((i) => i && typeof i === 'object')
+        .map((i) => ({ label: String(i.label || ''), link: String(i.link || '') }))
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
@@ -501,6 +563,85 @@ const server = createServer(async (req, res) => {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const rows = db.prepare('SELECT * FROM rfq ORDER BY id DESC LIMIT 200').all()
       return send(res, 200, rows)
+    }
+
+    // ---- Online chat: visitor endpoints (identity = the session token) ----
+    if (req.method === 'POST' && path === '/api/chat/start') {
+      const body = await readBody(req)
+      const existing = chatSessionByToken(String(body.token || req.headers['x-chat-token'] || '').trim())
+      if (existing) {
+        return send(res, 200, { sessionId: existing.id, token: existing.visitor_token, name: existing.visitor_name })
+      }
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim()
+      if (!hitAllowed(chatStartHits, ip, 10)) return send(res, 429, { error: 'too many requests, try again later' })
+      const name = String(body.name || '').trim().slice(0, 64) || '访客'
+      const token = randomBytes(24).toString('hex')
+      const nowIso = new Date().toISOString()
+      const info = db.prepare('INSERT INTO chat_sessions (visitor_token, visitor_name, lang, created_at, last_msg_at) VALUES (?, ?, ?, ?, ?)')
+        .run(token, name, LANGS.includes(body.lang) ? body.lang : 'en', nowIso, nowIso)
+      return send(res, 201, { sessionId: Number(info.lastInsertRowid), token, name })
+    }
+
+    if (path === '/api/chat/messages' && req.method === 'POST') {
+      const body = await readBody(req)
+      const session = chatSessionByToken(String(body.token || '').trim())
+      if (!session) return send(res, 401, { error: 'chat session not found' })
+      const text = String(body.body || '').trim()
+      if (!text) return send(res, 400, { error: 'message is empty' })
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim()
+      if (!hitAllowed(chatMsgHits, ip, 30)) return send(res, 429, { error: 'too many requests, try again later' })
+      return send(res, 201, insertChatMessage(session.id, 'visitor', text.slice(0, 2000)))
+    }
+
+    if (path === '/api/chat/messages' && req.method === 'GET') {
+      const session = chatSessionByToken(String(url.searchParams.get('token') || '').trim())
+      if (!session) return send(res, 401, { error: 'chat session not found' })
+      const afterId = Math.max(0, Number(url.searchParams.get('afterId') || 0))
+      const rows = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? AND id > ? ORDER BY id').all(session.id, afterId)
+      return send(res, 200, { sessionId: session.id, name: session.visitor_name, messages: rows.map(chatMessageOut) })
+    }
+
+    // ---- Admin: online chat (list sessions, read a thread, reply) ----
+    if (path === '/api/admin/chat/sessions' && req.method === 'GET') {
+      const rows = db.prepare('SELECT * FROM chat_sessions ORDER BY last_msg_at DESC, id DESC').all()
+      return send(res, 200, rows.map((s) => {
+        const last = db.prepare('SELECT body FROM chat_messages WHERE session_id = ? ORDER BY id DESC LIMIT 1').get(s.id)
+        const { n } = db.prepare("SELECT COUNT(*) AS n FROM chat_messages WHERE session_id = ? AND sender = 'visitor' AND id > ?")
+          .get(s.id, s.last_agent_read_msg_id)
+        return {
+          id: s.id, visitorName: s.visitor_name, lang: s.lang,
+          createdAt: s.created_at, lastMsgAt: s.last_msg_at,
+          lastMessage: last ? last.body : '', unread: n
+        }
+      }))
+    }
+    const adminChatMsgMatch = path.match(/^\/api\/admin\/chat\/sessions\/(\d+)\/messages$/)
+    if (adminChatMsgMatch && req.method === 'GET') {
+      const id = Number(adminChatMsgMatch[1])
+      const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(id)
+      if (!session) return send(res, 404, { error: 'chat session not found' })
+      const rows = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id').all(id)
+      // Opening the thread marks every visitor message in it as read.
+      const maxId = rows.length ? rows[rows.length - 1].id : 0
+      if (maxId > session.last_agent_read_msg_id) {
+        db.prepare('UPDATE chat_sessions SET last_agent_read_msg_id = ? WHERE id = ?').run(maxId, id)
+      }
+      return send(res, 200, {
+        session: {
+          id: session.id, visitorName: session.visitor_name, lang: session.lang,
+          createdAt: session.created_at, lastMsgAt: session.last_msg_at
+        },
+        messages: rows.map(chatMessageOut)
+      })
+    }
+    if (adminChatMsgMatch && req.method === 'POST') {
+      const id = Number(adminChatMsgMatch[1])
+      const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(id)
+      if (!session) return send(res, 404, { error: 'chat session not found' })
+      const body = await readBody(req)
+      const text = String(body.body || '').trim()
+      if (!text) return send(res, 400, { error: 'message is empty' })
+      return send(res, 201, insertChatMessage(id, 'agent', text.slice(0, 2000)))
     }
 
     // ---- Admin UI + uploaded images (static files; the UI asks for the token) ----

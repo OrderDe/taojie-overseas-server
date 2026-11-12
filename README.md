@@ -32,11 +32,14 @@ Public (no login — the overseas showcase is for anonymous visitors):
 | `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |
 | `GET /api/brands?lang=` | Active brands (products reference them by `brandId`) |
 | `POST /api/rfq` | Submit an inquiry `{name, contact, product, qty, message}` — stored as a lead (rate-limited per IP) |
+| `POST /api/chat/start` | Start a visitor chat session `{name?, token?}` → `{sessionId, token}` (a known token reuses its session) |
+| `POST /api/chat/messages` | Visitor sends a chat message `{token, body}` (rate-limited per IP) |
+| `GET /api/chat/messages?token=&afterId=` | Visitor pulls own chat messages (incremental via `afterId`) |
 
 Admin auth: log in with a username + password — `POST /api/admin/login`
 returns a session token that is then sent as the `x-admin-token` header.
 Each account has a role; roles carry **menu permissions** (`products` /
-`categories` / `rfq` / `config` / `users`) which the API enforces per area
+`categories` / `rfq` / `chat` / `config` / `users`) which the API enforces per area
 (403 when missing) and the UI uses to show/hide tabs. The `ADMIN_TOKEN`
 itself still works as a break-glass root credential with all permissions.
 First boot seeds three roles （超级管理员 / 运营 / 外贸员） and, while the user
@@ -48,6 +51,8 @@ people under 用户与角色.
 |---|---|
 | `POST /api/admin/login` / `POST /api/admin/logout` / `GET /api/admin/me` | Login (public), logout, current account + permissions |
 | `GET /api/admin/rfq` (perm `rfq`) | Latest 200 RFQ leads |
+| `GET /api/admin/chat/sessions` (perm `chat`) | Chat sessions by latest activity, with last-message preview and unread visitor-message count |
+| `GET\|POST /api/admin/chat/sessions/:id/messages` (perm `chat`) | Full thread (reading marks visitor messages as read) / reply as agent |
 | `PUT /api/admin/site-config` (perm `config`) | Update site config (only known fields are accepted) |
 | `GET\|POST /api/admin/products`, `PUT\|DELETE /api/admin/products/:id` (perm `products`) | Product management (multi-language names, USD price, MOQ, specs, on/off shelf) |
 | `GET\|POST /api/admin/categories`, `PUT\|DELETE /api/admin/categories/:id` (perm `categories`) | Category management (delete refuses while products use it) |
