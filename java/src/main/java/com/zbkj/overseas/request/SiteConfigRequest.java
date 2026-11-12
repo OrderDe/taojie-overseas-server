@@ -31,6 +31,9 @@ public class SiteConfigRequest {
     @Schema(description = "是否显示询价入口")
     private Boolean showRfq;
 
+    @Schema(description = "是否显示购物车和订单入口（缺省为关，询盘站定位）")
+    private Boolean showCart;
+
     @Schema(description = "WhatsApp 联系方式")
     private String whatsapp;
 

@@ -201,7 +201,7 @@ seedIfEmpty()
 
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
-  announcement: '', showRfq: true, whatsapp: '', email: '', currency: 'USD',
+  announcement: '', showRfq: true, showCart: false, whatsapp: '', email: '', currency: 'USD',
   // Homepage content blocks (admin-editable; empty = storefront falls back
   // to its built-in theme/i18n defaults). navItems is [{label, link}].
   navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
