@@ -46,10 +46,13 @@ public class SiteConfigRequest {
     @Schema(description = "币种符号，如 $")
     private String currency;
 
+    @Schema(description = "基准币种（商品价格按此币种录入，前台按汇率换算显示），如 CNY")
+    private String baseCurrency;
+
     @Schema(description = "站点 Logo 图片地址，空 = 前台显示文字店名")
     private String logo;
 
-    @Schema(description = "顶部导航菜单 [{label, link}]，空数组表示清空")
+    @Schema(description = "顶部导航菜单 [{label, link, type, categoryId}]，空数组表示清空")
     private List<NavItem> navItems;
 
     @Schema(description = "英雄区眉题，覆盖主题名")
@@ -81,7 +84,13 @@ public class SiteConfigRequest {
         @Schema(description = "菜单文字")
         private String label;
 
-        @Schema(description = "链接地址")
+        @Schema(description = "链接地址（锚点或外链时使用）")
         private String link;
+
+        @Schema(description = "点击行为：category 跳分类 / anchor 跳页面区块 / external 打开外链；空 = 前台按 link 推断")
+        private String type;
+
+        @Schema(description = "type=category 时的目标分类 id")
+        private String categoryId;
     }
 }

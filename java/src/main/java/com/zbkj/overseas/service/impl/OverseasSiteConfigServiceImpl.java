@@ -37,6 +37,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("whatsapp", "");
         DEFAULTS.put("email", "");
         DEFAULTS.put("currency", "$");
+        DEFAULTS.put("baseCurrency", "CNY");
         DEFAULTS.put("logo", "");
         // Homepage content blocks; empty = storefront uses theme/i18n defaults.
         DEFAULTS.put("navItems", new ArrayList<>());
@@ -70,6 +71,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("whatsapp", request.getWhatsapp());
         putIfPresent("email", request.getEmail());
         putIfPresent("currency", request.getCurrency());
+        putIfPresent("baseCurrency", request.getBaseCurrency());
         putIfPresent("logo", request.getLogo());
         putIfPresent("heroEyebrow", request.getHeroEyebrow());
         putIfPresent("dealerTitle", request.getDealerTitle());

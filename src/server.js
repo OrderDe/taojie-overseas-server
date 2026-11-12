@@ -29,6 +29,7 @@
 //   POST /api/admin/upload             (JSON {filename, dataBase64} -> {url}; images <= 6 MB, videos mp4/webm/mov <= 50 MB)
 //   POST /api/admin/translate          (zh name -> 11 target languages, entry-time only)
 //   GET  /api/admin/fx/rates?base=CNY  (FX rates for the price calculator; any admin account, 12h cache)
+//   GET  /api/fx/rates?base=CNY        (public twin of the above — storefront currency switcher, same cache)
 //   GET  /admin                        (admin UI, static files in admin/)
 //   GET  /uploads/<file>               (uploaded product images / videos)
 //
@@ -209,9 +210,12 @@ seedIfEmpty()
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
   announcement: '', showRfq: true, showCart: false, showDealer: false, whatsapp: '', email: '', currency: 'USD',
+  baseCurrency: 'CNY', // currency the stored product prices are in; the storefront converts for display
   logo: '', // header logo image URL; empty = storefront shows the text store name
   // Homepage content blocks (admin-editable; empty = storefront falls back
-  // to its built-in theme/i18n defaults). navItems is [{label, link}].
+  // to its built-in theme/i18n defaults). navItems is
+  // [{label, link, type?, categoryId?}] — type is 'category' | 'anchor' |
+  // 'external'; older items without a type are inferred from link upstream.
   navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
   dealerButton: '', hotline: '', storyTitle: '', storyText: ''
 }
@@ -712,6 +716,19 @@ async function getFxRates(base) {
   }
 }
 
+// Shared by GET /api/admin/fx/rates (login-gated price calculator) and
+// GET /api/fx/rates (public, storefront currency switcher): one
+// validation + cache path, identical response shape.
+async function sendFxRates(res, url) {
+  const base = String(url.searchParams.get('base') || 'CNY').toUpperCase()
+  if (!/^[A-Z]{3}$/.test(base)) return send(res, 400, { error: 'base must be a 3-letter currency code' })
+  try {
+    return send(res, 200, await getFxRates(base))
+  } catch {
+    return send(res, 502, { error: 'exchange rate service unavailable' })
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
   const path = url.pathname.replace(/\/$/, '') || '/'
@@ -782,16 +799,32 @@ const server = createServer(async (req, res) => {
       return send(res, 200, getConfig())
     }
 
+    // Public FX rates for the storefront currency switcher — same
+    // fetch + 12h cache as the admin calculator, no login required.
+    if (req.method === 'GET' && path === '/api/fx/rates') {
+      return sendFxRates(res, url)
+    }
+
     if (req.method === 'PUT' && path === '/api/admin/site-config') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const body = await readBody(req)
       const merged = { ...getConfig() }
       for (const k of Object.keys(DEFAULT_CONFIG)) if (body[k] !== undefined) merged[k] = body[k]
-      // navItems must stay an array of {label, link}; drop anything else.
+      // navItems must stay an array of {label, link, type?, categoryId?};
+      // drop anything else. type is whitelisted so a junk value cannot
+      // reach the storefront's click dispatcher.
       if (!Array.isArray(merged.navItems)) merged.navItems = []
       merged.navItems = merged.navItems
         .filter((i) => i && typeof i === 'object')
-        .map((i) => ({ label: String(i.label || ''), link: String(i.link || '') }))
+        .map((i) => {
+          const item = { label: String(i.label || ''), link: String(i.link || '') }
+          const type = String(i.type || '')
+          if (type === 'category' || type === 'anchor' || type === 'external') item.type = type
+          if (i.categoryId !== undefined && i.categoryId !== null && String(i.categoryId) !== '') {
+            item.categoryId = String(i.categoryId)
+          }
+          return item
+        })
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
@@ -834,13 +867,7 @@ const server = createServer(async (req, res) => {
     // menu permission — requiredPerm returns null for this path, same as
     // the translate endpoint, so sales staff can use it too).
     if (req.method === 'GET' && path === '/api/admin/fx/rates') {
-      const base = String(url.searchParams.get('base') || 'CNY').toUpperCase()
-      if (!/^[A-Z]{3}$/.test(base)) return send(res, 400, { error: 'base must be a 3-letter currency code' })
-      try {
-        return send(res, 200, await getFxRates(base))
-      } catch {
-        return send(res, 502, { error: 'exchange rate service unavailable' })
-      }
+      return sendFxRates(res, url)
     }
 
     if (req.method === 'POST' && path === '/api/rfq') {

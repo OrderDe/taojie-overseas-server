@@ -29,7 +29,8 @@ Public (no login — the overseas showcase is for anonymous visitors):
 | `GET /api/products?lang=&keyword=&categoryId=&brandId=&page=1&limit=48` | Product list / search (filters stack) |
 | `GET /api/products/:id?lang=` | Product detail |
 | `GET /api/keywords` | Search hot words |
-| `GET /api/site-config` | Storefront config (theme, announcement, contacts, …) |
+| `GET /api/site-config` | Storefront config (theme, announcement, contacts, baseCurrency, …) |
+| `GET /api/fx/rates?base=CNY` | Public FX rates for the storefront currency switcher — same fetch + 12h cache as the admin calculator below, no login required |
 | `GET /api/brands?lang=` | Active brands (products reference them by `brandId`) |
 | `POST /api/rfq` | Submit an inquiry `{name, contact, product, qty, message}` — stored as a lead (rate-limited per IP) |
 | `POST /api/chat/start` | Start a visitor chat session `{name?, token?, referrer?, page?, pageTitle?}` → `{sessionId, token}` (a known token reuses its session; IP geo + UA profile captured, geo best-effort) |
