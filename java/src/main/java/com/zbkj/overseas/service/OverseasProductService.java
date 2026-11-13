@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.zbkj.overseas.common.page.CommonPage;
 import com.zbkj.overseas.model.OverseasProduct;
 import com.zbkj.overseas.request.ProductSaveRequest;
+import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.ProductSearchRequest;
 import com.zbkj.overseas.response.AdminProductResponse;
 import com.zbkj.overseas.response.ProductResponse;
@@ -27,8 +28,11 @@ public interface OverseasProductService extends IService<OverseasProduct> {
     /** Convert an entity to its storefront response for the given language. */
     ProductResponse toResponse(OverseasProduct product, String lang);
 
-    /** All products for the admin UI (hidden ones included), sort/id order. */
+    /** All products for the admin UI (hidden ones included), sort desc / id desc. */
     List<AdminProductResponse> listForAdmin();
+
+    /** Batch-update sort values in one transaction; returns how many rows changed. */
+    int updateSorts(ProductSortRequest request);
 
     /** Create (id == null) or update a product from the admin payload. */
     AdminProductResponse saveForAdmin(ProductSaveRequest request, Long id);

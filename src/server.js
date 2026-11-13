@@ -1676,7 +1676,7 @@ const server = createServer(async (req, res) => {
       const brandId = url.searchParams.get('brandId') || ''
       const page = Math.max(1, Number(url.searchParams.get('page') || 1))
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 48)))
-      let rows = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort, id').all()
+      let rows = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort DESC, id DESC').all()
       if (categoryId) rows = rows.filter((r) => r.category_id === categoryId)
       if (brandId) rows = rows.filter((r) => String(r.brand_id || '') === String(brandId))
       if (keyword) {
@@ -2307,8 +2307,31 @@ const server = createServer(async (req, res) => {
     // ---- Admin: product management ----
     if (path === '/api/admin/products' && req.method === 'GET') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
-      const rows = db.prepare('SELECT * FROM products ORDER BY sort, id').all()
+      const rows = db.prepare('SELECT * FROM products ORDER BY sort DESC, id DESC').all()
       return send(res, 200, rows.map(adminProductOut))
+    }
+    // Batch sort save: the admin list edits sort values inline and
+    // submits only the rows that changed; one transaction, so a
+    // failure never leaves a half-ordered catalogue.
+    if (path === '/api/admin/products/sort' && req.method === 'POST') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const body = await readBody(req)
+      if (!Array.isArray(body.items)) return send(res, 400, { error: 'items must be an array of {id, sort}' })
+      const upd = db.prepare('UPDATE products SET sort = ? WHERE id = ?')
+      let updated = 0
+      db.exec('BEGIN')
+      try {
+        for (const it of body.items) {
+          const id = Math.trunc(Number(it && it.id))
+          if (!Number.isFinite(id) || id <= 0) continue
+          if (upd.run(Math.trunc(Number(it.sort) || 0), id).changes) updated++
+        }
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
+      }
+      return send(res, 200, { ok: true, updated })
     }
     if (path === '/api/admin/products' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })

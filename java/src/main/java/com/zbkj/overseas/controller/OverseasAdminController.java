@@ -7,6 +7,7 @@ import com.zbkj.overseas.request.BrandSaveRequest;
 import com.zbkj.overseas.request.CategorySaveRequest;
 import com.zbkj.overseas.request.CustomPageSaveRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
+import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.UploadRequest;
 import com.zbkj.overseas.response.AdminBrandResponse;
 import com.zbkj.overseas.response.AdminCategoryResponse;
@@ -71,6 +72,12 @@ public class OverseasAdminController {
     @GetMapping("/products")
     public CommonResult<List<AdminProductResponse>> products() {
         return CommonResult.success(productService.listForAdmin());
+    }
+
+    @Operation(summary = "管理端：商品批量排序（一次事务更新多件商品的排序值）")
+    @PostMapping("/products/sort")
+    public CommonResult<Map<String, Object>> sortProducts(@RequestBody ProductSortRequest request) {
+        return CommonResult.success(Map.of("ok", true, "updated", productService.updateSorts(request)));
     }
 
     @Operation(summary = "管理端：新建商品")

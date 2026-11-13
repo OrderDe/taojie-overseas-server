@@ -3,6 +3,7 @@ package com.zbkj.overseas.service.impl;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.zbkj.overseas.common.exception.OverseasException;
 import com.zbkj.overseas.common.page.CommonPage;
@@ -15,12 +16,14 @@ import com.zbkj.overseas.model.OverseasBrand;
 import com.zbkj.overseas.model.OverseasCategory;
 import com.zbkj.overseas.model.OverseasProduct;
 import com.zbkj.overseas.request.ProductSaveRequest;
+import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.ProductSearchRequest;
 import com.zbkj.overseas.response.AdminProductResponse;
 import com.zbkj.overseas.response.ProductResponse;
 import com.zbkj.overseas.service.OverseasProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -63,8 +66,8 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
                 .in(!categoryIds.isEmpty(), OverseasProduct::getCategoryId, categoryIds)
                 .eq(request.getBrandId() != null && !request.getBrandId().isBlank(),
                         OverseasProduct::getBrandId, request.getBrandId())
-                .orderByAsc(OverseasProduct::getSort)
-                .orderByDesc(OverseasProduct::getSales);
+                .orderByDesc(OverseasProduct::getSort)
+                .orderByDesc(OverseasProduct::getId);
         List<OverseasProduct> all = list(wrapper);
 
         if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
@@ -167,9 +170,33 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
     @Override
     public List<AdminProductResponse> listForAdmin() {
         return list(new LambdaQueryWrapper<OverseasProduct>()
-                .orderByAsc(OverseasProduct::getSort)
-                .orderByAsc(OverseasProduct::getId))
+                .orderByDesc(OverseasProduct::getSort)
+                .orderByDesc(OverseasProduct::getId))
                 .stream().map(this::toAdminResponse).collect(Collectors.toList());
+    }
+
+    // Batch sort save: one transaction for the whole batch, so a
+    // failure never leaves a half-ordered catalogue. Invalid ids are
+    // skipped; only rows that actually changed are counted.
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateSorts(ProductSortRequest request) {
+        if (request == null || request.getItems() == null) {
+            return 0;
+        }
+        int updated = 0;
+        for (ProductSortRequest.Item item : request.getItems()) {
+            if (item == null || item.getId() == null || item.getId() <= 0) {
+                continue;
+            }
+            boolean ok = update(new LambdaUpdateWrapper<OverseasProduct>()
+                    .eq(OverseasProduct::getId, item.getId())
+                    .set(OverseasProduct::getSort, item.getSort() == null ? 0 : item.getSort()));
+            if (ok) {
+                updated++;
+            }
+        }
+        return updated;
     }
 
     @Override
