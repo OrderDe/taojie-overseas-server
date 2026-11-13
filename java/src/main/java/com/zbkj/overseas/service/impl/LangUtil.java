@@ -26,6 +26,29 @@ final class LangUtil {
         };
     }
 
+    /** The admin edits one description, while MySQL stores a language JSON object. */
+    static String withAdminBlurb(String existing, String text) {
+        String value = text == null ? "" : text;
+        Map<String, String> values = new java.util.LinkedHashMap<>(toStringMap(existing));
+        // Preserve every existing translation when the description was not edited.
+        if (!values.isEmpty() && value.equals(pick(existing, "en"))) {
+            return JSONUtil.toJsonStr(values);
+        }
+        values.put("en", value);
+        values.put("zh", value);
+        return JSONUtil.toJsonStr(values);
+    }
+
+    static Map<String, Object> localizedContent(String json, String lang) {
+        if (json == null || json.isBlank()) return Map.of();
+        try {
+            cn.hutool.json.JSONObject content = JSONUtil.parseObj(json).getJSONObject(normLang(lang));
+            return content == null ? Map.of() : content;
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
     static String pick(String json, String lang) {
         if (json == null || json.isBlank()) {
             return "";

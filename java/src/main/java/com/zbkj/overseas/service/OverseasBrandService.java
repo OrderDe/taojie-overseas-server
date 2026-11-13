@@ -15,7 +15,7 @@ import java.util.List;
 public interface OverseasBrandService extends IService<OverseasBrand> {
 
     /** All visible brands for the storefront, names resolved for the requested language. */
-    List<BrandResponse> listForFront(String lang);
+    List<BrandResponse> listForFront(String lang, String categoryId);
 
     /** All brands for the admin UI (names as maps, counts include hidden products). */
     List<AdminBrandResponse> listForAdmin();

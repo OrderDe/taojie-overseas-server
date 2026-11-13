@@ -18,6 +18,13 @@ public class AdminCategoryResponse implements Serializable {
 
     private String id;
 
+    /** Empty string means a top-level category; null in update requests preserves the parent. */
+    private String parentId;
+
+    private Integer level;
+
+    private String pathName;
+
     @Schema(description = "多语言分类名 {en, zh, es, fr, pt}")
     private Map<String, String> names;
 

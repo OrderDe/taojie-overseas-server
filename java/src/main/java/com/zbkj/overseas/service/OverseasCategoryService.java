@@ -16,6 +16,8 @@ public interface OverseasCategoryService extends IService<OverseasCategory> {
     /** All visible categories, names resolved for the requested language, with live product counts. */
     List<CategoryResponse> listForFront(String lang);
 
+    java.util.Set<String> subtreeIds(String id);
+
     /** All categories for the admin UI (names as maps, counts include hidden products). */
     List<AdminCategoryResponse> listForAdmin();
 

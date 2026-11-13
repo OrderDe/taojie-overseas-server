@@ -17,6 +17,13 @@ public class CategoryResponse implements Serializable {
 
     private String id;
 
+    /** Empty string means a top-level category; null in update requests preserves the parent. */
+    private String parentId;
+
+    private Integer level;
+
+    private String pathName;
+
     @Schema(description = "按请求语言解析后的分类名")
     private String name;
 

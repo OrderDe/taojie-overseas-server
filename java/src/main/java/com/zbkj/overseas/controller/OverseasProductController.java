@@ -59,8 +59,9 @@ public class OverseasProductController {
     @Operation(summary = "获取海外品牌列表（仅启用的）")
     @GetMapping("/brands")
     public CommonResult<List<BrandResponse>> brands(
-            @RequestParam(name = "lang", defaultValue = "en") String lang) {
-        return CommonResult.success(brandService.listForFront(lang));
+            @RequestParam(name = "lang", defaultValue = "en") String lang,
+            @RequestParam(name = "categoryId", required = false) String categoryId) {
+        return CommonResult.success(brandService.listForFront(lang, categoryId));
     }
 
     @PermitAll

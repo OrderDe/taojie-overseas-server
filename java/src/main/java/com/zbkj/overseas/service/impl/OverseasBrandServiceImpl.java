@@ -32,9 +32,20 @@ public class OverseasBrandServiceImpl extends ServiceImpl<OverseasBrandDao, Over
     @Autowired
     private OverseasProductDao productDao;
 
+    @Autowired
+    private com.zbkj.overseas.service.OverseasCategoryService categoryService;
+
     @Override
-    public List<BrandResponse> listForFront(String lang) {
+    public List<BrandResponse> listForFront(String lang, String categoryId) {
+        java.util.Set<String> categoryIds = StrUtil.isNotBlank(categoryId) ? categoryService.subtreeIds(categoryId) : java.util.Set.of();
+        java.util.Set<String> ids = productDao.selectList(new LambdaQueryWrapper<OverseasProduct>()
+                .eq(OverseasProduct::getIsShow, true)
+                .in(!categoryIds.isEmpty(), OverseasProduct::getCategoryId, categoryIds))
+                .stream().map(OverseasProduct::getBrandId).filter(StrUtil::isNotBlank)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) return List.of();
         return list(new LambdaQueryWrapper<OverseasBrand>()
+                .in(OverseasBrand::getId, ids)
                 .eq(OverseasBrand::getIsShow, true)
                 .orderByAsc(OverseasBrand::getSort)
                 .orderByAsc(OverseasBrand::getId))

@@ -16,6 +16,9 @@ public class CategorySaveRequest {
     @Schema(description = "分类 id（仅新建时用，可留空自动生成；只允许字母、数字、- 和 _）")
     private String id;
 
+    /** Empty string means a top-level category; null in update requests preserves the parent. */
+    private String parentId;
+
     @Schema(description = "多语言分类名 {en, zh, es, fr, pt}，en/zh 至少填一个")
     private Map<String, String> names;
 

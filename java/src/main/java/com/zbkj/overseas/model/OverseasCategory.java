@@ -26,6 +26,9 @@ public class OverseasCategory implements Serializable {
     @TableId(value = "id", type = IdType.INPUT)
     private String id;
 
+    /** Empty string means a top-level category; null in update requests preserves the parent. */
+    private String parentId;
+
     /** JSON map lang -> name, e.g. {"en":"Clear Coats","zh":"清漆"} */
     private String names;
 

@@ -47,16 +47,20 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
     @Autowired
     private OverseasCategoryDao categoryDao;
 
+    @Autowired
+    private com.zbkj.overseas.service.OverseasCategoryService categoryService;
+
     @Override
     public CommonPage<ProductResponse> pageForFront(ProductSearchRequest request) {
         String lang = LangUtil.normLang(request.getLang());
         int page = request.getPage() == null || request.getPage() < 1 ? 1 : request.getPage();
         int limit = request.getLimit() == null || request.getLimit() < 1 ? 20 : Math.min(request.getLimit(), 100);
 
+        Set<String> categoryIds = StrUtil.isNotBlank(request.getCategoryId())
+                ? categoryService.subtreeIds(request.getCategoryId()) : Set.of();
         LambdaQueryWrapper<OverseasProduct> wrapper = new LambdaQueryWrapper<OverseasProduct>()
                 .eq(OverseasProduct::getIsShow, true)
-                .eq(request.getCategoryId() != null && !request.getCategoryId().isBlank(),
-                        OverseasProduct::getCategoryId, request.getCategoryId())
+                .in(!categoryIds.isEmpty(), OverseasProduct::getCategoryId, categoryIds)
                 .eq(request.getBrandId() != null && !request.getBrandId().isBlank(),
                         OverseasProduct::getBrandId, request.getBrandId())
                 .orderByAsc(OverseasProduct::getSort)
@@ -120,8 +124,16 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setId(p.getId());
         r.setCategoryId(p.getCategoryId());
         if (StrUtil.isNotBlank(p.getCategoryId())) {
-            OverseasCategory cat = categoryDao.selectById(p.getCategoryId());
-            r.setCategory(cat == null ? "" : LangUtil.pick(cat.getNames(), lang));
+            java.util.LinkedList<String> path = new java.util.LinkedList<>();
+            String categoryId = p.getCategoryId();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            while (StrUtil.isNotBlank(categoryId) && seen.add(categoryId) && path.size() < 3) {
+                OverseasCategory cat = categoryDao.selectById(categoryId);
+                if (cat == null) break;
+                path.addFirst(LangUtil.pick(cat.getNames(), lang));
+                categoryId = cat.getParentId();
+            }
+            r.setCategory(String.join(" / ", path));
         } else {
             r.setCategory("");
         }
@@ -136,13 +148,16 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setPrice(p.getPrice());
         r.setOtPrice(p.getOtPrice());
         r.setSales(p.getSales());
-        r.setUnit(p.getUnit());
+        Map<String, Object> content = LangUtil.localizedContent(p.getLocalizedContent(), lang);
+        r.setUnit(String.valueOf(content.getOrDefault("unit", p.getUnit() == null ? "" : p.getUnit())));
         r.setMoq(p.getMoq());
         r.setImage(p.getImage());
         r.setVideo(p.getVideo() == null ? "" : p.getVideo());
-        r.setTag(p.getTag());
+        r.setTag(String.valueOf(content.getOrDefault("tag", p.getTag() == null ? "" : p.getTag())));
         r.setDescription(LangUtil.pick(p.getBlurb(), lang));
-        r.setSpecs(LangUtil.toStringMap(p.getSpecs()));
+        r.setSpecs(content.get("specs") instanceof Map
+                ? LangUtil.toStringMap(JSONUtil.toJsonStr(content.get("specs")))
+                : LangUtil.toStringMap(p.getSpecs()));
         return r;
     }
 
@@ -182,6 +197,15 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
                 p.setSourceId(StrUtil.trim(request.getSourceId()));
             }
         }
+        // Clear derived translations when their source fields change.
+        if (!java.util.Objects.equals(p.getUnit(), StrUtil.blankToDefault(request.getUnit(), "pc"))
+                || !java.util.Objects.equals(p.getTag(), StrUtil.blankToDefault(request.getTag(), ""))
+                || !parseSpecs(p.getSpecs()).equals(request.getSpecs() == null ? Map.of() : request.getSpecs())) {
+            p.setLocalizedContent("{}");
+        }
+        if (StrUtil.isNotBlank(request.getCategoryId()) && categoryDao.selectById(request.getCategoryId()) == null) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "分类不存在");
+        }
         p.setCategoryId(StrUtil.blankToDefault(request.getCategoryId(), ""));
         p.setBrandId(brandId);
         p.setNames(JSONUtil.toJsonStr(names));
@@ -193,7 +217,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         p.setImage(StrUtil.blankToDefault(request.getImage(), ""));
         p.setVideo(StrUtil.blankToDefault(request.getVideo(), ""));
         p.setTag(StrUtil.blankToDefault(request.getTag(), ""));
-        p.setBlurb(StrUtil.blankToDefault(request.getBlurb(), ""));
+        p.setBlurb(LangUtil.withAdminBlurb(p.getBlurb(), request.getBlurb()));
         p.setSpecs(request.getSpecs() == null ? "{}" : JSONUtil.toJsonStr(request.getSpecs()));
         p.setSort(request.getSort() == null ? 0 : request.getSort());
         p.setIsShow(!Boolean.FALSE.equals(request.getActive()));

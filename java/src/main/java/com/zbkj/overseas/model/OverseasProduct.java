@@ -63,6 +63,9 @@ public class OverseasProduct implements Serializable {
     /** JSON object of spec rows, e.g. {"Mix ratio":"2 : 1"} */
     private String specs;
 
+    /** JSON map lang -> {unit, tag, specs}; source fields remain unchanged. */
+    private String localizedContent;
+
     private Boolean isShow;
 
     private Integer sort;
