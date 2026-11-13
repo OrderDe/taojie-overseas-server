@@ -129,10 +129,13 @@ public class SiteConfigRequest {
         private String categoryId;
     }
 
-    /** Custom company-profile content: hero carousel + sections + gallery + FAQ + testimonials. */
+    /** Custom company-profile content: banner + hero carousel + sections + gallery + FAQ + testimonials. */
     @Data
     @Schema(name = "ProfileContent", description = "公司简介图文自定义内容")
     public static class ProfileContent {
+
+        @Schema(description = "页面横幅（标题/副标题/背景图）")
+        private ProfileBanner banner;
 
         @Schema(description = "顶部轮播图 URL 列表")
         private List<String> heroImages = new ArrayList<>();
@@ -148,6 +151,21 @@ public class SiteConfigRequest {
 
         @Schema(description = "客户评价列表")
         private List<ProfileTestimonial> testimonials = new ArrayList<>();
+    }
+
+    /** Full-width banner at the top of the company-profile page. */
+    @Data
+    @Schema(name = "ProfileBanner", description = "公司简介页面横幅")
+    public static class ProfileBanner {
+
+        @Schema(description = "主标题（多语言 {语言码: 文案}）")
+        private Map<String, String> title;
+
+        @Schema(description = "副标题（多语言 {语言码: 文案}）")
+        private Map<String, String> subtitle;
+
+        @Schema(description = "背景图 URL（可空）")
+        private String image;
     }
 
     /** One company-profile section: heading + body paragraphs + bullets + optional image. */

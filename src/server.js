@@ -426,10 +426,11 @@ const DEFAULT_CONFIG = {
   // Company profile display mode: 'embed' shows profileUrl full-page in
   // an iframe; 'custom' renders profileContent natively (see below).
   profileMode: 'embed',
-  // Custom company-profile content, authored in the admin: a hero image
-  // carousel, free-form sections (title/body/bullets/optional image,
-  // each text a {lang: text} map like product names), a photo gallery,
-  // FAQ entries and customer testimonials. The PUT
+  // Custom company-profile content, authored in the admin: a full-width
+  // banner (title/subtitle/image), a hero image carousel, free-form
+  // sections (title/body/bullets/optional image, each text a
+  // {lang: text} map like product names), a photo gallery, FAQ entries
+  // and customer testimonials. The PUT
   // handler shape-guards it (sanitizeProfileContent), so the storefront
   // can render whatever is stored without defensive checks.
   // The default below is the full WILLIS / Meishicai company profile
@@ -440,6 +441,13 @@ const DEFAULT_CONFIG = {
   // populated — and editable in the admin 「公司简介」 page — from
   // day one; any config saved from the admin replaces it wholesale.
   profileContent: {
+    // Full-width banner at the top of the profile page (prototype
+    // layout): background image + big title + subtitle + two buttons.
+    banner: {
+      title: { zh: '美诗彩汽车涂料', en: 'MEISHICAI Automotive Coatings' },
+      subtitle: { zh: 'OEM & ODM 汽车涂料制造商', en: 'OEM & ODM Automotive Paint Manufacturer' },
+      image: 'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779607313419.jpg'
+    },
     heroImages: [
       'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779616076263.jpg',
       'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779623142310.png',
@@ -452,7 +460,7 @@ const DEFAULT_CONFIG = {
         title: { zh: '关于我们', en: 'About Us' },
         body: { zh: '广东美诗彩汽车漆有限公司位于广东省韶关市，环境优雅，是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。\n\n公司拥有先进的设备、高效的检测体系以及完善的售后服务体系，确保产品与服务的品质。\n\n公司已通过 ISO9001 国际质量管理体系认证与 ISO14001 国际环境管理体系认证，是汽车涂料与工业涂料领域的大型专业制造商。\n\n我们拥有一支在该领域拥有 15 年以上经验的专业技术团队，欢迎世界各地的客户访问我们的网站，如有任何需求请随时告知，我们期待为您提供优质的服务。', en: 'Guangdong Meishicai auto paint Co., LTD. located in the elegant environment of Guangdong Province, Shaoguan City, we are a modern technology enterprise specializing in the research and development, production, sales, import and export trade of automotive coatings and industrial coatings, and has over 15 years of experience in exporting worldwide.\n\nWe have advanced equipment, effective testing systems, and a comprehensive after-sales service system to ensure the quality of our products and services.\n\nWe have obtained ISO9001 international quality management system certification and ISO14001 international environmental management agency certification. We are a large professional manufacturer of automotive coatings and industrial coatings.\n\nWe have professional technician team all in this area more than 15 years, welcome customers from all over the world visit our website, and inform us if you have any needs, we are looking forward to give you excellent service.' },
         bullets: [],
-        image: ''
+        image: 'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894357.jpg'
       },
       {
         title: { zh: '产品系列', en: 'Product Lineup' },
@@ -473,8 +481,10 @@ const DEFAULT_CONFIG = {
         title: { zh: '出口市场与服务', en: 'Support & Services' },
         body: { zh: '我们的产品出口到欧洲、美国、韩国、日本、中东、非洲及世界各地，并已与众多合作伙伴建立了长期、稳定的合作关系。我们可以提供 OEM/ODM 服务，欢迎定制设计。我们坚信，严格的质量控制与卓越的服务，是支撑我们不断走得更远、最终实现目标的精神所在。', en: 'We export products to Europe, the USA, South Korea, Japan, the Middle East, Africa and all around the world. We have already established long, stable relationships with many cooperative partners. We can offer OEM/ODM services. Custom design is welcome. We do believe that strict quality control and remarkable service is the spirit to keep us running further and further, and finally realize our goals.' },
         bullets: [
-          { zh: '交期可协商：3–7 天', en: 'Negotiate the delivery time: 3-7 days' },
-          { zh: '专业售后团队，24 小时服务', en: 'Professional after-sales team, 24H service' }
+          { zh: '出口市场：欧洲、美国、韩国、日本、中东、非洲', en: 'Export markets: Europe, USA, South Korea, Japan, Middle East, Africa' },
+          { zh: 'OEM & ODM 定制服务', en: 'OEM & ODM customization services' },
+          { zh: '100% 出厂前检测', en: '100% quality testing before delivery' },
+          { zh: '免费样品（仅付运费）', en: 'Free samples (shipping cost only)' }
         ],
         image: ''
       },
@@ -598,8 +608,19 @@ function sanitizeImageUrl(raw) {
   return /^(https?:)?\/\//i.test(u) || u.startsWith('/') ? u : ''
 }
 function sanitizeProfileContent(raw) {
-  const empty = { heroImages: [], sections: [], gallery: [], faqs: [], testimonials: [] }
+  const emptyBanner = { title: {}, subtitle: {}, image: '' }
+  const empty = { banner: emptyBanner, heroImages: [], sections: [], gallery: [], faqs: [], testimonials: [] }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
+  // Page banner: title/subtitle are {lang: text} maps (short), image a
+  // single URL guarded like the section images. A missing or malformed
+  // banner degrades to the empty shape; the storefront then falls back
+  // to the brand name + first section title.
+  const rawBanner = raw.banner && typeof raw.banner === 'object' && !Array.isArray(raw.banner) ? raw.banner : {}
+  const banner = {
+    title: sanitizeLangMap(rawBanner.title, 200),
+    subtitle: sanitizeLangMap(rawBanner.subtitle, 200),
+    image: sanitizeImageUrl(rawBanner.image)
+  }
   const sections = (Array.isArray(raw.sections) ? raw.sections : [])
     .filter((s) => s && typeof s === 'object' && !Array.isArray(s))
     .slice(0, 20)
@@ -626,7 +647,7 @@ function sanitizeProfileContent(raw) {
       name: typeof t.name === 'string' ? t.name.trim().slice(0, 100) : '',
       text: sanitizeLangMap(t.text, 1000)
     }))
-  return { heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
+  return { banner, heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
 }
 
 function pickLang(namesJson, lang) {

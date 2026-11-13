@@ -70,6 +70,10 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
     // and editable in the admin — from day one.
     private static SiteConfigRequest.ProfileContent defaultProfileContent() {
         SiteConfigRequest.ProfileContent content = new SiteConfigRequest.ProfileContent();
+        content.setBanner(profileBanner(
+                langMap("美诗彩汽车涂料", "MEISHICAI Automotive Coatings"),
+                langMap("OEM & ODM 汽车涂料制造商", "OEM & ODM Automotive Paint Manufacturer"),
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779607313419.jpg"));
         content.setHeroImages(new ArrayList<>(java.util.List.of(
                 "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779616076263.jpg",
                 "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779623142310.png",
@@ -82,7 +86,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
                         langMap("关于我们", "About Us"),
                         langMap("广东美诗彩汽车漆有限公司位于广东省韶关市，环境优雅，是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。\n\n公司拥有先进的设备、高效的检测体系以及完善的售后服务体系，确保产品与服务的品质。\n\n公司已通过 ISO9001 国际质量管理体系认证与 ISO14001 国际环境管理体系认证，是汽车涂料与工业涂料领域的大型专业制造商。\n\n我们拥有一支在该领域拥有 15 年以上经验的专业技术团队，欢迎世界各地的客户访问我们的网站，如有任何需求请随时告知，我们期待为您提供优质的服务。", "Guangdong Meishicai auto paint Co., LTD. located in the elegant environment of Guangdong Province, Shaoguan City, we are a modern technology enterprise specializing in the research and development, production, sales, import and export trade of automotive coatings and industrial coatings, and has over 15 years of experience in exporting worldwide.\n\nWe have advanced equipment, effective testing systems, and a comprehensive after-sales service system to ensure the quality of our products and services.\n\nWe have obtained ISO9001 international quality management system certification and ISO14001 international environmental management agency certification. We are a large professional manufacturer of automotive coatings and industrial coatings.\n\nWe have professional technician team all in this area more than 15 years, welcome customers from all over the world visit our website, and inform us if you have any needs, we are looking forward to give you excellent service."),
                         new ArrayList<>(),
-                        ""),
+                        "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894357.jpg"),
                 profileSection(
                         langMap("产品系列", "Product Lineup"),
                         langMap("公司主营产品包括清漆、固化剂、稀释剂、1K 与 2K 素色漆、1K 珍珠漆、1K 水晶珍珠漆、1K 银粉漆、原子灰、1K 与 2K 底漆及其他辅料。", "Our main product lineup includes clear coats, hardeners, thinners, 1K & 2K solid color paints, 1K pearl paints, 1K crystal pearl paints, 1K silver paints, body filler, 1K & 2K primers and other auxiliary materials."),
@@ -101,8 +105,10 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
                         langMap("出口市场与服务", "Support & Services"),
                         langMap("我们的产品出口到欧洲、美国、韩国、日本、中东、非洲及世界各地，并已与众多合作伙伴建立了长期、稳定的合作关系。我们可以提供 OEM/ODM 服务，欢迎定制设计。我们坚信，严格的质量控制与卓越的服务，是支撑我们不断走得更远、最终实现目标的精神所在。", "We export products to Europe, the USA, South Korea, Japan, the Middle East, Africa and all around the world. We have already established long, stable relationships with many cooperative partners. We can offer OEM/ODM services. Custom design is welcome. We do believe that strict quality control and remarkable service is the spirit to keep us running further and further, and finally realize our goals."),
                         new ArrayList<>(java.util.List.of(
-                                langMap("交期可协商：3–7 天", "Negotiate the delivery time: 3-7 days"),
-                                langMap("专业售后团队，24 小时服务", "Professional after-sales team, 24H service")
+                                langMap("出口市场：欧洲、美国、韩国、日本、中东、非洲", "Export markets: Europe, USA, South Korea, Japan, Middle East, Africa"),
+                                langMap("OEM & ODM 定制服务", "OEM & ODM customization services"),
+                                langMap("100% 出厂前检测", "100% quality testing before delivery"),
+                                langMap("免费样品（仅付运费）", "Free samples (shipping cost only)")
                         )),
                         ""),
                 profileSection(
@@ -167,6 +173,15 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         return map;
     }
 
+    private static SiteConfigRequest.ProfileBanner profileBanner(
+            Map<String, String> title, Map<String, String> subtitle, String image) {
+        SiteConfigRequest.ProfileBanner banner = new SiteConfigRequest.ProfileBanner();
+        banner.setTitle(title);
+        banner.setSubtitle(subtitle);
+        banner.setImage(image);
+        return banner;
+    }
+
     private static SiteConfigRequest.ProfileSection profileSection(
             Map<String, String> title, Map<String, String> body, java.util.List<Map<String, String>> bullets, String image) {
         SiteConfigRequest.ProfileSection section = new SiteConfigRequest.ProfileSection();
@@ -199,6 +214,16 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         SiteConfigRequest.ProfileContent out = new SiteConfigRequest.ProfileContent();
         if (raw == null) {
             return out;
+        }
+        // Banner: short {lang: text} maps + one guarded image URL; a
+        // missing banner stays null and the storefront falls back to
+        // the brand name + first section title.
+        if (raw.getBanner() != null) {
+            SiteConfigRequest.ProfileBanner cleanBanner = new SiteConfigRequest.ProfileBanner();
+            cleanBanner.setTitle(sanitizeLangMap(raw.getBanner().getTitle(), 200));
+            cleanBanner.setSubtitle(sanitizeLangMap(raw.getBanner().getSubtitle(), 200));
+            cleanBanner.setImage(sanitizeImageUrl(raw.getBanner().getImage()));
+            out.setBanner(cleanBanner);
         }
         out.setHeroImages(sanitizeImageList(raw.getHeroImages()));
         out.setGallery(sanitizeImageList(raw.getGallery()));
