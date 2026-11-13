@@ -376,6 +376,28 @@ try {
   console.error('sfsy formula auto-import skipped:', e.message)
 }
 
+// Willis catalogue first boot: when no willis-sourced products exist yet
+// and the repo carries the scraped catalogue (data/willis_catalog.json),
+// import it automatically — the same code path as
+// `node tools/import-willis.js`. Rows land as real brand / category /
+// product records (admin-manageable, storefront-linked); brand,
+// categories and products are deduped by name / source_id, so restarts
+// never duplicate. Any failure is logged and never blocks startup.
+try {
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM products WHERE source_id LIKE 'willis:%'").get()
+  if (Number(n) === 0) {
+    const tool = await import(pathToFileURL(join(ROOT, 'tools', 'import-willis.js')).href)
+    const file = tool.findBundledDataFile(ROOT)
+    if (file) {
+      const results = tool.importIntoDb(db, tool.loadCatalog(file))
+      console.log(`willis catalogue auto-imported from ${basename(file)}:`)
+      for (const line of results) console.log(`  ${line}`)
+    }
+  }
+} catch (e) {
+  console.error('willis catalogue auto-import skipped:', e.message)
+}
+
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
   announcement: '', showRfq: true, showCart: false, showDealer: false, showContact: true, whatsapp: '', email: '', currency: 'USD',
