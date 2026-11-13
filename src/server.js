@@ -43,7 +43,6 @@
 //   POST /api/admin/translate          (zh name -> 11 target languages, entry-time only)
 //   GET  /api/admin/fx/rates?base=CNY  (FX rates for the price calculator; any admin account, 12h cache)
 //   GET  /api/fx/rates?base=CNY        (public twin of the above — storefront currency switcher, same cache)
-//   GET  /admin                        (admin UI, static files in admin/)
 //   GET  /uploads/<file>               (uploaded product images / videos)
 //
 // Data lives in a single SQLite file (data/app.db). On first boot the
@@ -61,7 +60,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT || 3100)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
 const DB_PATH = process.env.DB_PATH || join(ROOT, 'data', 'app.db')
-const ADMIN_DIR = join(ROOT, 'admin')
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(ROOT, 'data', 'uploads')
 const LANGS = ['en', 'zh', 'es', 'fr', 'pt']
 
@@ -1491,7 +1489,7 @@ function chatPageLabel(page, pageTitle) {
   return t ? `${p} · ${t}` : p
 }
 
-// ---- Admin: catalogue management + static files (admin UI, uploads) ----
+// ---- Admin: catalogue management + uploaded media ----
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -2399,13 +2397,7 @@ const server = createServer(async (req, res) => {
       })
     }
 
-    // ---- Admin UI + uploaded images (static files; the UI asks for the token) ----
-    if (req.method === 'GET' && (path === '/admin' || path.startsWith('/admin/'))) {
-      const rel = path === '/admin' ? 'index.html' : path.slice('/admin/'.length)
-      const file = join(ADMIN_DIR, rel)
-      if (!file.startsWith(ADMIN_DIR)) return send(res, 404, { error: 'not found' })
-      return sendFile(res, file)
-    }
+    // ---- Uploaded media ----
     if (req.method === 'GET' && path.startsWith('/uploads/')) {
       return sendFile(res, join(UPLOAD_DIR, basename(path)))
     }

@@ -84,9 +84,9 @@ PUT|DELETE /api/admin/roles/{id}    编辑 / 删除（内置角色、仍有用�
 GET  /api/admin/permissions         菜单权限定义（角色编辑用）
 ```
 
-**后台管理界面**：启动后打开 **`/admin`**（静态页在 `src/main/resources/static/admin/`，
-与 Node 版共用同一套界面和接口契约），用账号密码登录（初始账号 admin / ADMIN_TOKEN），
-页签按角色权限显示：商品管理、分类管理、询价列表、站点配置、用户与角色。
+**后台管理界面**：使用独立仓库 **`taojie-overseas-admin`**，启动或部署该 Vue 项目，
+将 `/api/` 代理到本后端（默认 3100 端口）。本服务提供 `/api/admin/**` 管理接口，
+不再内置或重定向旧 `/admin` 静态页面。
 上传的图片存放在 `overseas.upload-dir`
 （默认 `./data/uploads`，可用环境变量 `UPLOAD_DIR` 覆盖），经 `/uploads/**` 访问。
 

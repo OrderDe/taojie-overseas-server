@@ -70,15 +70,10 @@ people under 用户与角色.
 
 ## Admin UI （后台管理界面）
 
-Open **`http://localhost:3100/admin`** — a small built-in management page
-(static files in `admin/`, no build step). Log in with a username and
-password (initial account: **admin** / the `ADMIN_TOKEN` value); the
-session token is kept in sessionStorage and sent as `x-admin-token`.
-Tabs follow the account's role: 商品管理 (products), 分类管理 (categories),
-询价列表 (RFQs), 站点配置 (site config), 用户与角色 (users & roles) — a tab
-the role does not include is not shown at all. The **Java implementation
-serves the same UI and the same admin API**, so day-to-day management
-looks identical whichever backend is deployed.
+The management UI lives in the separate **`taojie-overseas-admin`** repository.
+Run or deploy that Vue application and configure its `/api/` proxy to this backend
+(default port 3100). This backend exposes `/api/admin/**` and `/uploads/**`;
+it no longer serves the legacy `/admin` static page.
 
 New RFQs are also POSTed as JSON to `RFQ_WEBHOOK_URL` when set (mail /
 WhatsApp notification gateway hook).

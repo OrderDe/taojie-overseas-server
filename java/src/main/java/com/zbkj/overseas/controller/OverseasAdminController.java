@@ -36,8 +36,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Admin controller for the management UI (static page at /admin, served from
- * classpath:/static/admin). Every path here sits under /api/admin/**, so
+ * Admin API controller for the standalone taojie-overseas-admin frontend.
+ * Every path here sits under /api/admin/**, so
  * AdminTokenInterceptor guards them all — same contract as the Node backend:
  * the UI logs in with the ADMIN_TOKEN and sends it as x-admin-token.
  */
