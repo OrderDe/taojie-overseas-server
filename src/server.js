@@ -8,6 +8,9 @@
 //   GET  /api/products/:id?lang=
 //   GET  /api/keywords
 //   GET  /api/site-config
+//   GET  /api/pages                    (custom pages: enabled list [{slug, titles}])
+//   GET  /api/pages/:slug              (one custom page, full content; 404 when hidden/missing)
+//   GET|POST|PUT|DELETE /api/admin/pages[/:id]       (custom page management; perm config)
 //   POST /api/rfq                      (lead capture, stored in SQLite)
 //   POST /api/chat/start               (visitor chat: create/reuse a session)
 //   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
@@ -102,6 +105,16 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS site_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE IF NOT EXISTS custom_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    titles TEXT NOT NULL DEFAULT '{}',
+    sections TEXT NOT NULL DEFAULT '[]',
+    gallery TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS fx_rates (
     base TEXT PRIMARY KEY,
@@ -355,6 +368,7 @@ function seedIfEmpty() {
   console.log(`seeded ${seed.products?.length || 0} products, ${seed.categories?.length || 0} categories`)
 }
 seedIfEmpty()
+seedCustomPagesIfEmpty()
 
 // Formula library first boot: when the formula tables are still empty
 // and the repo carries the sfsy data file, import it automatically —
@@ -650,6 +664,74 @@ function sanitizeProfileContent(raw) {
   return { banner, heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
 }
 
+// ---- Custom pages (admin-authored standalone pages the nav can point to) ----
+// Same guard philosophy as profileContent: lang maps keep string values
+// only (truncated), section images go through the URL rule, lists are
+// capped. The slug is the page's stable public handle (nav items store
+// it), so it is validated strictly and stays unique.
+const CUSTOM_PAGE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
+function sanitizeCustomPage(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {}
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .filter((s) => s && typeof s === 'object' && !Array.isArray(s))
+    .slice(0, 30)
+    .map((s) => ({
+      title: sanitizeLangMap(s.title, 300),
+      body: sanitizeLangMap(s.body, 5000),
+      image: sanitizeImageUrl(s.image)
+    }))
+  return {
+    slug: typeof raw.slug === 'string' ? raw.slug.trim() : '',
+    titles: sanitizeLangMap(raw.titles, 300),
+    sections,
+    gallery: sanitizeImageList(raw.gallery),
+    enabled: raw.enabled !== false,
+    sort: Math.trunc(Number(raw.sort) || 0)
+  }
+}
+function customPageOut(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    titles: parseJsonCol(row.titles, {}),
+    sections: parseJsonCol(row.sections, []),
+    gallery: parseJsonCol(row.gallery, []),
+    enabled: row.enabled === 1,
+    sort: row.sort,
+    updatedAt: row.updated_at || ''
+  }
+}
+// One sample page on first boot (only while the table is empty) so the
+// owner sees the feature working end to end; it is a normal row — she
+// can edit or delete it in the admin like any other page.
+function seedCustomPagesIfEmpty() {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM custom_pages').get()
+  if (Number(n) > 0) return
+  const img = (name) => `https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/${name}`
+  const page = sanitizeCustomPage({
+    slug: 'cases',
+    titles: { zh: '客户案例', en: 'Cases' },
+    enabled: true,
+    sort: 1,
+    sections: [
+      {
+        title: { zh: '我们的工厂', en: 'Our Factory' },
+        body: { zh: '我们拥有专业的生产设备与经验丰富的生产团队。\n\n产品质量有保障，发货速度快！', en: 'WE HAVE PROFESSIONAL PRODUCTION EQUIPMENT AND EXPERIENCED MANUFACTURERS.\n\nTHE QUALITY OF THE PRODUCT IS GUARANTEED, AND THE SHIPMENT SPEED IS FAST!' },
+        image: img('1779626894357.jpg')
+      },
+      {
+        title: { zh: '仓储与发货', en: 'Warehousing & Shipping' },
+        body: { zh: '专业的生产设备与经验丰富的生产团队，产品质量有保障，发货速度快。', en: 'Professional production equipment and an experienced team — guaranteed product quality and fast shipment.' },
+        image: img('1779626894649.jpg')
+      }
+    ],
+    gallery: [img('1779626894497.jpg'), img('1779626894850.jpg'), img('1779626894947.jpg')]
+  })
+  db.prepare('INSERT INTO custom_pages (slug, titles, sections, gallery, enabled, sort, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString())
+  console.log('seeded sample custom page: cases')
+}
+
 function pickLang(namesJson, lang) {
   let names = {}
   try { names = JSON.parse(namesJson || '{}') } catch { /* keep empty */ }
@@ -808,6 +890,7 @@ function requiredPerm(path) {
   if (path.startsWith('/api/admin/visitors')) return 'visitors'
   if (path.startsWith('/api/admin/formula')) return 'formula'
   if (path === '/api/admin/site-config') return 'config'
+  if (path.startsWith('/api/admin/pages')) return 'config'
   return null
 }
 
@@ -1533,6 +1616,20 @@ const server = createServer(async (req, res) => {
       return send(res, 200, getConfig())
     }
 
+    // ---- Custom pages (public): the nav can point at admin-authored
+    // standalone pages. The list only exposes enabled pages' handles;
+    // a hidden or unknown slug is a plain 404.
+    if (req.method === 'GET' && path === '/api/pages') {
+      const rows = db.prepare('SELECT slug, titles FROM custom_pages WHERE enabled = 1 ORDER BY sort, id').all()
+      return send(res, 200, rows.map((r) => ({ slug: r.slug, titles: parseJsonCol(r.titles, {}) })))
+    }
+    const publicPageMatch = path.match(/^\/api\/pages\/([^/]+)$/)
+    if (req.method === 'GET' && publicPageMatch) {
+      const row = db.prepare('SELECT * FROM custom_pages WHERE slug = ? AND enabled = 1').get(decodeURIComponent(publicPageMatch[1]))
+      if (!row) return send(res, 404, { error: 'page not found' })
+      return send(res, 200, customPageOut(row))
+    }
+
     // Public FX rates for the storefront currency switcher — same
     // fetch + 12h cache as the admin calculator, no login required.
     if (req.method === 'GET' && path === '/api/fx/rates') {
@@ -2216,6 +2313,52 @@ const server = createServer(async (req, res) => {
       const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE brand_id = ?').get(id)
       if (n > 0) return send(res, 400, { error: `brand still has ${n} product(s); reassign or delete them first` })
       db.prepare('DELETE FROM brands WHERE id = ?').run(id)
+      return send(res, 200, { ok: true })
+    }
+
+    // ---- Admin: custom page management (perm: config) ----
+    if (path === '/api/admin/pages' && req.method === 'GET') {
+      const rows = db.prepare('SELECT * FROM custom_pages ORDER BY sort, id').all()
+      return send(res, 200, rows.map(customPageOut))
+    }
+    if (path === '/api/admin/pages' && req.method === 'POST') {
+      const body = await readBody(req)
+      const page = sanitizeCustomPage(body)
+      if (!CUSTOM_PAGE_SLUG_RE.test(page.slug)) {
+        return send(res, 400, { error: 'slug must be 2-61 chars: lowercase letters, digits and hyphens, starting with a letter or digit' })
+      }
+      if (!Object.values(page.titles).some((v) => String(v || '').trim())) {
+        return send(res, 400, { error: 'page title is required (at least one language)' })
+      }
+      if (db.prepare('SELECT id FROM custom_pages WHERE slug = ?').get(page.slug)) {
+        return send(res, 400, { error: `slug already exists: ${page.slug}` })
+      }
+      const info = db.prepare('INSERT INTO custom_pages (slug, titles, sections, gallery, enabled, sort, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString())
+      return send(res, 201, customPageOut(db.prepare('SELECT * FROM custom_pages WHERE id = ?').get(Number(info.lastInsertRowid))))
+    }
+    const adminPageMatch = path.match(/^\/api\/admin\/pages\/(\d+)$/)
+    if (adminPageMatch && req.method === 'PUT') {
+      const id = Number(adminPageMatch[1])
+      if (!db.prepare('SELECT id FROM custom_pages WHERE id = ?').get(id)) return send(res, 404, { error: 'page not found' })
+      const body = await readBody(req)
+      const page = sanitizeCustomPage(body)
+      if (!CUSTOM_PAGE_SLUG_RE.test(page.slug)) {
+        return send(res, 400, { error: 'slug must be 2-61 chars: lowercase letters, digits and hyphens, starting with a letter or digit' })
+      }
+      if (!Object.values(page.titles).some((v) => String(v || '').trim())) {
+        return send(res, 400, { error: 'page title is required (at least one language)' })
+      }
+      const clash = db.prepare('SELECT id FROM custom_pages WHERE slug = ? AND id != ?').get(page.slug, id)
+      if (clash) return send(res, 400, { error: `slug already exists: ${page.slug}` })
+      db.prepare('UPDATE custom_pages SET slug = ?, titles = ?, sections = ?, gallery = ?, enabled = ?, sort = ?, updated_at = ? WHERE id = ?')
+        .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString(), id)
+      return send(res, 200, customPageOut(db.prepare('SELECT * FROM custom_pages WHERE id = ?').get(id)))
+    }
+    if (adminPageMatch && req.method === 'DELETE') {
+      const id = Number(adminPageMatch[1])
+      if (!db.prepare('SELECT id FROM custom_pages WHERE id = ?').get(id)) return send(res, 404, { error: 'page not found' })
+      db.prepare('DELETE FROM custom_pages WHERE id = ?').run(id)
       return send(res, 200, { ok: true })
     }
 

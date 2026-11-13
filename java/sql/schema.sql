@@ -78,6 +78,20 @@ CREATE TABLE IF NOT EXISTS eb_overseas_site_config (
     PRIMARY KEY (config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外站点配置（键值表，同 eb_system_config 模式）';
 
+CREATE TABLE IF NOT EXISTS eb_overseas_custom_page (
+    id          BIGINT       NOT NULL AUTO_INCREMENT,
+    slug        VARCHAR(64)  NOT NULL COMMENT '页面路径标识 ^[a-z0-9][a-z0-9-]{1,60}$，导航按它引用页面',
+    titles      JSON         NOT NULL COMMENT '多语言页面标题 {"en":..,"zh":..,...}',
+    sections    JSON         NOT NULL COMMENT '内容区块 [{title:{..},body:{..},image}]',
+    gallery     JSON         NOT NULL COMMENT '图库 URL 数组',
+    sort        INT          NOT NULL DEFAULT 0,
+    is_show     TINYINT(1)   NOT NULL DEFAULT 1,
+    create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_custom_page_slug (slug)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外自定义页面（后台图文页，导航可指向）';
+
 -- 汇率缓存（后台「汇率换算」试算工具）。已部署的库改跑 sql/fx-rates.sql。
 -- 数据源 open.er-api.com，按 base 一行，12 小时内直接用缓存。
 CREATE TABLE IF NOT EXISTS eb_overseas_fx_rate (

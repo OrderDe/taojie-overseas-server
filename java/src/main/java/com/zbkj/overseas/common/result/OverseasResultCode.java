@@ -15,7 +15,8 @@ public enum OverseasResultCode implements IResultEnum {
     CHAT_SESSION_INVALID(6005, "聊天会话不存在或已失效"),
     CHAT_MESSAGE_EMPTY(6006, "消息内容不能为空"),
     VISITOR_NOT_FOUND(6007, "访客不存在"),
-    FORMULA_NOT_FOUND(6008, "颜色不存在");
+    FORMULA_NOT_FOUND(6008, "颜色不存在"),
+    PAGE_NOT_FOUND(6009, "页面不存在或已隐藏");
 
     private final Integer code;
     private final String message;
