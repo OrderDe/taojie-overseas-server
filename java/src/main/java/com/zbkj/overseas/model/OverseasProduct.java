@@ -44,6 +44,9 @@ public class OverseasProduct implements Serializable {
     /** USD original (strike-through) price */
     private BigDecimal otPrice;
 
+    /** Negotiable price （面议）: true = storefront shows no numeric price, enquiry only */
+    private Boolean negotiable;
+
     private Integer sales;
 
     private String unit;

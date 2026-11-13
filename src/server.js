@@ -77,6 +77,7 @@ db.exec(`
     names TEXT NOT NULL DEFAULT '{}',
     price REAL NOT NULL DEFAULT 0,
     ot_price REAL NOT NULL DEFAULT 0,
+    negotiable INTEGER NOT NULL DEFAULT 0,
     sales INTEGER NOT NULL DEFAULT 0,
     unit TEXT NOT NULL DEFAULT 'pc',
     moq INTEGER NOT NULL DEFAULT 0,
@@ -207,6 +208,10 @@ try { db.exec("ALTER TABLE products ADD COLUMN brand_id TEXT NOT NULL DEFAULT ''
 // Products gained one optional demo video (URL, '' = none) alongside the
 // single image when the admin console grew a video upload.
 try { db.exec("ALTER TABLE products ADD COLUMN video TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
+// Products gained a negotiable-price flag: an admin can mark a product
+// "price on request" (面议), after which the storefront shows no numeric
+// price and the product can only be enquired about, never carted.
+try { db.exec('ALTER TABLE products ADD COLUMN negotiable INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
 // Chat sessions gained a visitor profile (geo/device/UA), presence
 // (last_seen), typing + read watermarks, an internal note and a lifecycle
 // status when the chat grew into a small support console. Add in place.
@@ -382,6 +387,11 @@ const DEFAULT_CONFIG = {
   // 'external'; older items without a type are inferred from link upstream.
   navigationConfigured: false, navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
   dealerButton: '', hotline: '', storyTitle: '', storyText: '',
+  // Company profile page: when set, the storefront "profile" view embeds
+  // this URL full-page in an iframe (mirrors the original Willis site,
+  // whose profile page embeds the company homepage). Empty = the
+  // storefront falls back to the storyTitle/storyText text version.
+  profileUrl: 'https://williscarpaint.com/',
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
@@ -418,6 +428,7 @@ function productOut(row, lang) {
     brand: brandName(row.brand_id, lang),
     price: row.price,
     otPrice: row.ot_price,
+    negotiable: row.negotiable === 1,
     sales: row.sales,
     unit: row.unit,
     moq: row.moq,
@@ -1005,6 +1016,7 @@ function adminProductOut(row) {
     names: parseJsonCol(row.names, {}),
     price: row.price,
     otPrice: row.ot_price,
+    negotiable: row.negotiable === 1,
     sales: row.sales,
     unit: row.unit,
     moq: row.moq,
@@ -1032,6 +1044,7 @@ function productValues(body) {
     names: JSON.stringify(names),
     price: Number(body.price) || 0,
     otPrice: Number(body.otPrice) || 0,
+    negotiable: body.negotiable ? 1 : 0,
     sales: Math.max(0, Math.trunc(Number(body.sales) || 0)),
     unit: String(body.unit || 'pc'),
     moq: Math.max(0, Math.trunc(Number(body.moq) || 0)),
@@ -1848,9 +1861,9 @@ const server = createServer(async (req, res) => {
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
       const info = db.prepare(`INSERT INTO products
-        (source_id, category_id, brand_id, names, price, ot_price, sales, unit, moq, image, video, tag, blurb, specs, sort, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active)
+        (source_id, category_id, brand_id, names, price, ot_price, negotiable, sales, unit, moq, image, video, tag, blurb, specs, sort, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.negotiable, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active)
       const row = db.prepare('SELECT * FROM products WHERE id = ?').get(Number(info.lastInsertRowid))
       return send(res, 201, adminProductOut(row))
     }
@@ -1861,9 +1874,9 @@ const server = createServer(async (req, res) => {
       if (!db.prepare('SELECT id FROM products WHERE id = ?').get(id)) return send(res, 404, { error: 'product not found' })
       const v = productValues(await readBody(req))
       if (typeof v === 'string') return send(res, 400, { error: v })
-      db.prepare(`UPDATE products SET source_id = ?, category_id = ?, brand_id = ?, names = ?, price = ?, ot_price = ?,
+      db.prepare(`UPDATE products SET source_id = ?, category_id = ?, brand_id = ?, names = ?, price = ?, ot_price = ?, negotiable = ?,
         sales = ?, unit = ?, moq = ?, image = ?, video = ?, tag = ?, blurb = ?, specs = ?, sort = ?, active = ? WHERE id = ?`)
-        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active, id)
+        .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.negotiable, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active, id)
       return send(res, 200, adminProductOut(db.prepare('SELECT * FROM products WHERE id = ?').get(id)))
     }
     if (adminProductMatch && req.method === 'DELETE') {

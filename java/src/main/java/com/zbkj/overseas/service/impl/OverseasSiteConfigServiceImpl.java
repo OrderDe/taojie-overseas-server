@@ -50,6 +50,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("hotline", "");
         DEFAULTS.put("storyTitle", "");
         DEFAULTS.put("storyText", "");
+        DEFAULTS.put("profileUrl", "https://williscarpaint.com/");
         DEFAULTS.put("tiktok", "");
         DEFAULTS.put("instagram", "");
         DEFAULTS.put("facebook", "");
@@ -87,6 +88,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("hotline", request.getHotline());
         putIfPresent("storyTitle", request.getStoryTitle());
         putIfPresent("storyText", request.getStoryText());
+        putIfPresent("profileUrl", request.getProfileUrl());
         putIfPresent("tiktok", request.getTiktok());
         putIfPresent("instagram", request.getInstagram());
         putIfPresent("facebook", request.getFacebook());

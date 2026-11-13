@@ -40,6 +40,9 @@ public class ProductResponse implements Serializable {
     @Schema(description = "美元原价")
     private BigDecimal otPrice;
 
+    @Schema(description = "是否面议（true = 不显示数字价格，显示「面议」）")
+    private Boolean negotiable;
+
     private Integer sales;
 
     private String unit;

@@ -81,6 +81,9 @@ public class SiteConfigRequest {
     @Schema(description = "品牌故事正文")
     private String storyText;
 
+    @Schema(description = "公司简介嵌入网址（前台公司简介页整页嵌入；空 = 显示文字版简介）")
+    private String profileUrl;
+
     @Schema(description = "TikTok 主页链接（空 = 前台不显示图标）")
     private String tiktok;
 
