@@ -441,6 +441,10 @@ const DEFAULT_CONFIG = {
   // 'external'; older items without a type are inferred from link upstream.
   navigationConfigured: false, navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
   dealerButton: '', hotline: '', storyTitle: '', storyText: '',
+  // Hero card "talk to sales" button behaviour: 'contact' (default)
+  // opens the contact-details modal, 'rfq' opens the quote form,
+  // 'chat' opens the online chat. The PUT handler whitelists the value.
+  salesBtnAction: 'contact',
   // Company profile page: when set, the storefront "profile" view embeds
   // this URL full-page in an iframe (mirrors the original Willis site,
   // whose profile page embeds the company homepage). Empty = the
@@ -625,7 +629,7 @@ const DEFAULT_CONFIG = {
     {
       title: { zh: '买家服务', en: 'Buyers' },
       links: [
-        { labels: { zh: '索取报价', en: 'Request a Quote' }, type: 'anchor', link: '#rfq', categoryId: '' },
+        { labels: { zh: '免费获取报价', en: 'Request a Quote' }, type: 'anchor', link: '#rfq', categoryId: '' },
         { labels: { zh: '经销商计划', en: 'Distributor Program' }, type: '', link: '', categoryId: '' },
         { labels: { zh: '私牌定制', en: 'Private Label' }, type: '', link: '', categoryId: '' },
         { labels: { zh: '样品', en: 'Samples' }, type: '', link: '', categoryId: '' }
@@ -1862,6 +1866,9 @@ const server = createServer(async (req, res) => {
       // Search placeholder is a short {lang: text} map, guarded like
       // the footer copyright line.
       merged.searchPlaceholder = sanitizeLangMap(merged.searchPlaceholder, 200)
+      // Sales-button behaviour is a three-value enum; anything else
+      // falls back to the contact-details modal.
+      merged.salesBtnAction = ['rfq', 'chat'].includes(merged.salesBtnAction) ? merged.salesBtnAction : 'contact'
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
