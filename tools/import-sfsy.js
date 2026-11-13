@@ -197,14 +197,15 @@ function parseValues(text, i) {
   return [rows, i]
 }
 
-function main() {
-  if (!existsSync(dataFile)) {
-    console.error(`data file not found: ${dataFile}`)
-    process.exit(1)
-  }
-  let raw = readFileSync(dataFile)
-  if (dataFile.endsWith('.b64')) raw = Buffer.from(raw.toString('utf8').trim(), 'base64')
-  if (dataFile.endsWith('.gz') || dataFile.endsWith('.b64')) raw = gunzipSync(raw)
+export function findBundledDataFile(root) {
+  return ['sfsy_data.sql.gz', 'sfsy_data.sql.gz.b64', 'sfsy_data.sql']
+    .map((n) => join(root, 'data', n)).find((f) => existsSync(f)) || null
+}
+
+export function loadDumpRows(file) {
+  let raw = readFileSync(file)
+  if (file.endsWith('.b64')) raw = Buffer.from(raw.toString('utf8').trim(), 'base64')
+  if (file.endsWith('.gz') || file.endsWith('.b64')) raw = gunzipSync(raw)
   const text = raw.toString('utf8')
 
   // Collect rows per table, in file order.
@@ -215,16 +216,16 @@ function main() {
     const table = m[1]
     const [rows, end] = parseValues(text, re.lastIndex)
     re.lastIndex = end
-    if (!TABLES.includes(table)) {
-      console.log(`skip unknown table in dump: ${table} (${rows.length} rows)`)
-      continue
-    }
+    if (!TABLES.includes(table)) continue
     if (!byTable.has(table)) byTable.set(table, [])
     byTable.get(table).push(...rows)
   }
+  return byTable
+}
 
-  const db = new DatabaseSync(dbPath)
-  db.exec(DDL)
+// Insert parsed rows into an open DB whose formula tables already exist
+// (the caller's DDL). Tables that already hold rows are skipped.
+export function importIntoDb(db, byTable) {
   const results = []
   db.exec('BEGIN')
   try {
@@ -256,9 +257,22 @@ function main() {
     db.exec('ROLLBACK')
     throw e
   }
+  return results
+}
+
+function main() {
+  if (!existsSync(dataFile)) {
+    console.error(`data file not found: ${dataFile}`)
+    process.exit(1)
+  }
+  const byTable = loadDumpRows(dataFile)
+  const db = new DatabaseSync(dbPath)
+  db.exec(DDL)
+  const results = importIntoDb(db, byTable)
   console.log(`import into ${dbPath} complete:`)
   for (const line of results) console.log(`  ${line}`)
   db.close()
 }
 
-main()
+import { pathToFileURL } from 'node:url'
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()

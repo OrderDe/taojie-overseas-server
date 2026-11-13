@@ -52,7 +52,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, extname, basename } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT || 3100)
@@ -350,6 +350,26 @@ function seedIfEmpty() {
   console.log(`seeded ${seed.products?.length || 0} products, ${seed.categories?.length || 0} categories`)
 }
 seedIfEmpty()
+
+// Formula library first boot: when the formula tables are still empty
+// and the repo carries the sfsy data file, import it automatically —
+// the same code path as `node tools/import-sfsy.js`, so no manual step
+// is needed after a fresh deploy. Tables that already hold rows are
+// skipped; any failure is logged and never blocks startup.
+try {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM car_brand').get()
+  if (Number(n) === 0) {
+    const tool = await import(pathToFileURL(join(ROOT, 'tools', 'import-sfsy.js')).href)
+    const file = tool.findBundledDataFile(ROOT)
+    if (file) {
+      const results = tool.importIntoDb(db, tool.loadDumpRows(file))
+      console.log(`sfsy formula data auto-imported from ${basename(file)}:`)
+      for (const line of results) console.log(`  ${line}`)
+    }
+  }
+} catch (e) {
+  console.error('sfsy formula auto-import skipped:', e.message)
+}
 
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
