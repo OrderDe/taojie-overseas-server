@@ -22,10 +22,8 @@
 | MySQL 走 Druid（`DruidDataSource`）+ `infra.host` 统一基础设施地址；各环境库名/端口/池参数不同（dev/beta 同库名、test 独立测试库、prod 大池） | 每套 profile 同构：Druid + `${infra.host}`，库名 `taojie_overseas_dev/_test/_beta` 与正式库 `taojie_overseas` | 照它的环境模型换上海外自己的库 |
 | 未照搬：gateway / Nacos / Redis 集群 / tjMall-search / flowable / flink / log | — | 海外站不需要；询价限流先用内存计数，真需要时按同接口换 Redis |
 
-与已上线仓库根目录的 Node 版（`src/server.js`）关系：**接口契约完全一致**
-（路径、字段、`/api` 前缀、3100 端口），Java 版是它的正式替代实现，前端零改动。
-数据仍是各存各的：本服务连雅加达自己的 MySQL，不直连 tjmall 国内库；
-商品通过导入脚本从 tjmall 导出数据同步进来（见下）。
+本仓库仅保留 Java/MySQL 实现，Node/SQLite 版已移除。前台和独立后台通过 `/api` 接口访问本服务。
+商品通过导入脚本同步至 MySQL，不直接调用 tjMall 的登录接口。
 
 ## 接口一览
 
@@ -74,7 +72,7 @@ GET  /api/brands                     前台品牌列表 [{id, name, logo}]
 GET|POST /api/admin/brands          品牌列表（管理版）/ 新建品牌（需 products 权限）
 PUT|DELETE /api/admin/brands/{id}   修改 / 删除品牌（下有商品时拒绝删除；存量库需跑 sql/admin-brands.sql）
 POST /api/admin/upload              上传商品图 {filename, dataBase64} -> {url}（需 products 权限）
-POST /api/admin/translate           名称自动翻译 {text, targets?, provider?} -> {translations, errors, provider, meta?}（任意登录态；录入时译一次存 names JSON；环境变量同 Node 版：默认自托管 LibreTranslate，LIBRETRANSLATE_URL 默认 http://127.0.0.1:5000；TRANSLATE_PROVIDER=mymemory 才切回 MyMemory，TRANSLATE_EMAIL 提其配额；请求体 provider 可填 "mymemory"|"libre" 覆盖本次调用、非法值 400；响应回显实际 provider，MyMemory 且源响应带额度字段时透传 meta{responseStatus, quotaFinished?}；无静默回退，不支持的语种进 errors）
+POST /api/admin/translate           名称自动翻译 {text, targets?, provider?} -> {translations, errors, provider, meta?}（任意登录态；录入时译一次存 names JSON；环境变量：默认自托管 LibreTranslate，LIBRETRANSLATE_URL 默认 http://127.0.0.1:5000；TRANSLATE_PROVIDER=mymemory 才切回 MyMemory，TRANSLATE_EMAIL 提其配额；请求体 provider 可填 "mymemory"|"libre" 覆盖本次调用、非法值 400；响应回显实际 provider，MyMemory 且源响应带额度字段时透传 meta{responseStatus, quotaFinished?}；无静默回退，不支持的语种进 errors）
 GET  /api/admin/fx/rates            汇率表 ?base=CNY -> {base, rates, sourceUpdatedAt, fetchedAt, stale, fromCache}（任意登录态；后台「汇率换算」试算工具用；数据源 open.er-api.com 免费无 key，按 base 落库缓存 12 小时，拉取失败回退旧缓存并标 stale，无缓存又失败才 502；存量库需跑 sql/fx-rates.sql）
 GET  /api/fx/rates                  公开汇率表 ?base=CNY（前台币种切换用；与 admin 版共用 OverseasFxService 同一取数+缓存，返回形状一致，无需登录；站点配置另有 baseCurrency 字段=商品价格录入币种，默认 CNY，键值表存法无需跑 SQL）
 GET|POST /api/admin/users           后台用户列表 / 新建（需 users 权限）
@@ -118,7 +116,7 @@ MySQL 配置方式完全按 tjmall：连接池 Druid、JDBC 地址用 `${infra.h
 要求：JDK 17、Maven 3.9+、MySQL 8。
 
 ```bash
-# 1. 建库建表 + 演示数据（与 Node 版相同的 14 个示例商品）
+# 1. 建库建表 + 演示数据（14 个示例商品，仅用于新库演示）
 mysql -u root -p < sql/schema.sql
 mysql -u root -p taojie_overseas < sql/seed.sql
 
@@ -137,11 +135,11 @@ pip install pymysql
 DB_PASSWORD=xxx python3 tools/import-products.py products.json
 ```
 
-`products.json` 的格式与 Node 版导入脚本相同（一份导出、两边通用）：
+`products.json` 的格式见 `tools/import-products.py` 文件头的示例：
 `sourceId` 对应 tjmall 商品 id，按它 upsert；英文名/美元价/MOQ 在导出环节补齐。
 
 ## 部署（雅加达）
 
 jar + systemd 或 `nohup java -jar` 均可，监听 3100；Nginx 把 `/api/` 反代到
-127.0.0.1:3100、前端静态文件走 CDN——与 Node 版的部署方式完全相同，直接替换进程即可。
+127.0.0.1:3100，前端与独立后台静态文件单独部署。
 数据库密码与 ADMIN_TOKEN 只走服务器环境变量，不写进仓库。

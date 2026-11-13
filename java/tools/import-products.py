@@ -5,8 +5,7 @@ Usage:
     DB_HOST=127.0.0.1 DB_USER=root DB_PASSWORD=xxx DB_NAME=taojie_overseas \
         python3 import-products.py products.json
 
-Input JSON is the same shape as the interim Node service's
-scripts/import-products.mjs format — one pipeline serves both:
+Input JSON format:
 
     {
       "categories": [{"id": "clear", "names": {"en": "...", "zh": "..."}}],
@@ -17,7 +16,7 @@ scripts/import-products.mjs format — one pipeline serves both:
                       "blurb": {"en": "..."}, "specs": {"Mix ratio": "2 : 1"}}]
     }
 
-Rows are upserted by source_id, exactly like the Node importer.
+Rows are upserted by source_id.
 `blurb` may be a plain string (stored as single-language text) or a map.
 
 Requires: pymysql  (pip install pymysql)

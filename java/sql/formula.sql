@@ -7,7 +7,7 @@
 -- before running it if you customised the 运营 role).
 --   mysql -u root -p taojie_overseas < sql/formula.sql
 -- The data itself is imported separately from the sfsy dump
--- (Node: tools/import-sfsy.js; MySQL: load the same dump after renaming
+-- (MySQL: load the source dump after renaming
 -- the tables with the eb_overseas_ prefix).
 
 USE taojie_overseas;

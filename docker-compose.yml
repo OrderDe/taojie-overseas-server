@@ -1,36 +1,7 @@
-# Overseas backend + self-hosted translation service.
-#
-#   docker compose up -d
-#
-# The backend listens on 3100 (Nginx reverse-proxies /api/ to it).
-# LibreTranslate listens on 127.0.0.1:5000 ONLY — it is an internal
-# helper for POST /api/admin/translate, never exposed publicly; the
-# backend reaches it at LIBRETRANSLATE_URL (default http://127.0.0.1:5000,
-# which works as-is when both run on the same host / host networking).
+# Java backend runs separately; this Compose file starts only LibreTranslate.
+# Run: docker compose up -d libretranslate
+# Java uses LIBRETRANSLATE_URL=http://127.0.0.1:5000 on the same host.
 services:
-  server:
-    build: .
-    # Zero-dependency Node backend has no Dockerfile dependencies to
-    # install; if you deploy the Java build instead, drop this service
-    # and run the jar as before — only the translate service below matters.
-    image: taojie-overseas-server
-    restart: unless-stopped
-    environment:
-      PORT: "3100"
-      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
-      RFQ_WEBHOOK_URL: "${RFQ_WEBHOOK_URL:-}"
-      # Self-hosted translate is the default; leave TRANSLATE_PROVIDER
-      # unset (or "libre"). Set it to "mymemory" only to opt back into
-      # the free MyMemory API.
-      TRANSLATE_PROVIDER: "${TRANSLATE_PROVIDER:-libre}"
-      LIBRETRANSLATE_URL: "${LIBRETRANSLATE_URL:-http://127.0.0.1:5000}"
-      LIBRETRANSLATE_API_KEY: "${LIBRETRANSLATE_API_KEY:-}"
-      TRANSLATE_EMAIL: "${TRANSLATE_EMAIL:-}"
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./data:/app/data
-
   libretranslate:
     image: libretranslate/libretranslate
     restart: unless-stopped
