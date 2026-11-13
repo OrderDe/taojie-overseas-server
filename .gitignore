@@ -8,3 +8,10 @@ data/uploads/
 # sfsy import data: stored as .sql.gz.b64 text (snapshot pushes are text-only);
 # the plain .sql.gz is a local build artifact of tools/import-sfsy.js inputs.
 data/sfsy_data.sql.gz
+
+# Local IDE metadata and runtime logs
+.idea/
+*.iml
+.vscode/
+/logs/
+/java/logs/
