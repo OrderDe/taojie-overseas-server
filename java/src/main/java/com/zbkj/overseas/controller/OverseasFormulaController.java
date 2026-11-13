@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.zbkj.overseas.service.impl.FormulaLocalizationService;
 
 /**
  * Storefront paint-formula library — public, no login. Routes and JSON
@@ -33,37 +34,43 @@ public class OverseasFormulaController {
     @Autowired
     private OverseasFormulaService formulaService;
 
+    @Autowired
+    private FormulaLocalizationService localization;
+
     @PermitAll
     @Operation(summary = "配方库：启用的汽车品牌（按 letter_rank）")
     @GetMapping("/brands")
-    public CommonResult<List<FormulaBrandResponse>> brands() {
-        return CommonResult.success(formulaService.brands());
+    public CommonResult<JsonNode> brands(@RequestParam(name = "lang", defaultValue = "zh") String lang) {
+        return CommonResult.success(localization.localize(formulaService.brands(), lang));
     }
 
     @PermitAll
     @Operation(summary = "配方库：车型（brandId 联动，可空=全部）")
     @GetMapping("/models")
-    public CommonResult<List<FormulaModelResponse>> models(
-            @RequestParam(name = "brandId", required = false) Long brandId) {
-        return CommonResult.success(formulaService.models(brandId));
+    public CommonResult<JsonNode> models(
+            @RequestParam(name = "brandId", required = false) Long brandId,
+            @RequestParam(name = "lang", defaultValue = "zh") String lang) {
+        return CommonResult.success(localization.localize(formulaService.models(brandId), lang));
     }
 
     @PermitAll
     @Operation(summary = "配方库：车辆颜色搜索（品牌/车型/关键词，分页）")
     @GetMapping("/search")
-    public CommonResult<FormulaColorPageResponse> search(
+    public CommonResult<JsonNode> search(
             @RequestParam(name = "brandId", required = false) Long brandId,
             @RequestParam(name = "modelId", required = false) Long modelId,
             @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "page", defaultValue = "1") int page,
-            @RequestParam(name = "pageSize", defaultValue = "15") int pageSize) {
-        return CommonResult.success(formulaService.search(brandId, modelId, keyword, page, pageSize));
+            @RequestParam(name = "pageSize", defaultValue = "15") int pageSize,
+            @RequestParam(name = "lang", defaultValue = "zh") String lang) {
+        return CommonResult.success(localization.localize(formulaService.search(brandId, modelId, keyword, page, pageSize), lang));
     }
 
     @PermitAll
     @Operation(summary = "配方库：颜色详情（色号 + LAB + 配方行）")
     @GetMapping("/colors/{id}")
-    public CommonResult<FormulaColorDetailResponse> detail(@PathVariable("id") Long id) {
-        return CommonResult.success(formulaService.detail(id));
+    public CommonResult<JsonNode> detail(@PathVariable("id") Long id,
+            @RequestParam(name = "lang", defaultValue = "zh") String lang) {
+        return CommonResult.success(localization.localize(formulaService.detail(id), lang));
     }
 }

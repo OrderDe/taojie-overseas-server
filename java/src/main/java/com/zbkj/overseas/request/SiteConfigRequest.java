@@ -58,6 +58,8 @@ public class SiteConfigRequest {
     @Schema(description = "顶部导航菜单 [{label, link, type, categoryId}]，空数组表示清空")
     private List<NavItem> navItems;
 
+    private Boolean navigationConfigured;
+
     @Schema(description = "英雄区眉题，覆盖主题名")
     private String heroEyebrow;
 
@@ -101,6 +103,10 @@ public class SiteConfigRequest {
 
         @Schema(description = "菜单文字")
         private String label;
+
+        private String labelKey;
+
+        private Boolean enabled;
 
         @Schema(description = "链接地址（锚点或外链时使用）")
         private String link;

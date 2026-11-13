@@ -380,7 +380,7 @@ const DEFAULT_CONFIG = {
   // to its built-in theme/i18n defaults). navItems is
   // [{label, link, type?, categoryId?}] — type is 'category' | 'anchor' |
   // 'external'; older items without a type are inferred from link upstream.
-  navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
+  navigationConfigured: false, navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
   dealerButton: '', hotline: '', storyTitle: '', storyText: '',
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
@@ -1291,7 +1291,7 @@ const server = createServer(async (req, res) => {
       merged.navItems = merged.navItems
         .filter((i) => i && typeof i === 'object')
         .map((i) => {
-          const item = { label: String(i.label || ''), link: String(i.link || '') }
+          const item = { label: String(i.label || ''), link: String(i.link || ''), enabled: i.enabled !== false, labelKey: String(i.labelKey || '') }
           const type = String(i.type || '')
           if (type === 'category' || type === 'anchor' || type === 'external') item.type = type
           if (i.categoryId !== undefined && i.categoryId !== null && String(i.categoryId) !== '') {

@@ -42,6 +42,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("logo", "");
         // Homepage content blocks; empty = storefront uses theme/i18n defaults.
         DEFAULTS.put("navItems", new ArrayList<>());
+        DEFAULTS.put("navigationConfigured", false);
         DEFAULTS.put("heroEyebrow", "");
         DEFAULTS.put("dealerTitle", "");
         DEFAULTS.put("dealerText", "");
@@ -105,6 +106,9 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         }
         // navItems is stored as a JSON string, same as the multi-language
         // names elsewhere; an empty list is a real value (clears the nav).
+        if (request.getNavigationConfigured() != null) {
+            put("navigationConfigured", String.valueOf(request.getNavigationConfigured()));
+        }
         if (request.getNavItems() != null) {
             put("navItems", JSONUtil.toJsonStr(request.getNavItems()));
         }
@@ -126,7 +130,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
     }
 
     private Object parseValue(String key, String value) {
-        if ("showRfq".equals(key) || "showCart".equals(key) || "showDealer".equals(key) || "showContact".equals(key)) {
+        if ("navigationConfigured".equals(key) || "showRfq".equals(key) || "showCart".equals(key) || "showDealer".equals(key) || "showContact".equals(key)) {
             return Boolean.parseBoolean(value);
         }
         if ("navItems".equals(key)) {
