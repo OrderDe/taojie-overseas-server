@@ -110,6 +110,9 @@ public class SiteConfigRequest {
     @Schema(description = "微信号（前台点击复制）")
     private String wechat;
 
+    @Schema(description = "顶栏搜索框提示字（多语言 {语言码: 文案}，留空的语言用前台内置默认文案）")
+    private Map<String, String> searchPlaceholder;
+
     @Schema(description = "页脚品牌介绍（多语言 {语言码: 文案}）")
     private Map<String, String> footerBlurb;
 

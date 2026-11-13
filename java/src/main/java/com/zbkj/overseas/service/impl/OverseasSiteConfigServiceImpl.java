@@ -60,6 +60,9 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("facebook", "");
         DEFAULTS.put("youtube", "");
         DEFAULTS.put("wechat", "");
+        // Header search-box placeholder copy ({lang: text} map, mirrors
+        // the Node backend); empty = the storefront's built-in i18n copy.
+        DEFAULTS.put("searchPlaceholder", new LinkedHashMap<>());
         // Footer content (mirrors the Node backend's defaults, which
         // reproduce the storefront's previously hardcoded footer).
         DEFAULTS.put("footerBlurb", langMap(
@@ -446,6 +449,11 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if (request.getProfileContent() != null) {
             put("profileContent", JSONUtil.toJsonStr(sanitizeProfileContent(request.getProfileContent())));
         }
+        // Search placeholder is stored as a JSON string, like the
+        // footer language maps.
+        if (request.getSearchPlaceholder() != null) {
+            put("searchPlaceholder", JSONUtil.toJsonStr(sanitizeLangMap(request.getSearchPlaceholder(), 200)));
+        }
         // Footer fields are stored as JSON strings, like profileContent.
         if (request.getFooterBlurb() != null) {
             put("footerBlurb", JSONUtil.toJsonStr(sanitizeLangMap(request.getFooterBlurb(), 1000)));
@@ -521,7 +529,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if ("profileMode".equals(key)) {
             return "custom".equals(value) ? "custom" : "embed";
         }
-        if ("footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)) {
+        if ("searchPlaceholder".equals(key) || "footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)) {
             if (StrUtil.isBlank(value)) {
                 return new LinkedHashMap<>();
             }

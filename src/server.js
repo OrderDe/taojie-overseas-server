@@ -632,6 +632,10 @@ const DEFAULT_CONFIG = {
       ]
     }
   ],
+  // Header search-box placeholder copy: a {lang: text} map edited on
+  // the admin site-config page. Empty (per language) = the storefront
+  // falls back to its built-in i18n placeholder for that language.
+  searchPlaceholder: {},
   // Internal: sha256 of the bundled willis catalogue last synced into
   // the products table (see the startup sync above); not admin-edited.
   willisImportHash: ''
@@ -1855,6 +1859,9 @@ const server = createServer(async (req, res) => {
       merged.footerNote = sanitizeLangMap(merged.footerNote, 1000)
       merged.footerCopyright = sanitizeLangMap(merged.footerCopyright, 200)
       merged.footerColumns = sanitizeFooterColumns(merged.footerColumns)
+      // Search placeholder is a short {lang: text} map, guarded like
+      // the footer copyright line.
+      merged.searchPlaceholder = sanitizeLangMap(merged.searchPlaceholder, 200)
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
