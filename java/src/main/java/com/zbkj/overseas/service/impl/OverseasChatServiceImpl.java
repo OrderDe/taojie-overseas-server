@@ -1,6 +1,8 @@
 package com.zbkj.overseas.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zbkj.overseas.common.exception.OverseasException;
 import com.zbkj.overseas.common.result.OverseasResultCode;
@@ -10,12 +12,14 @@ import com.zbkj.overseas.model.OverseasChatMessage;
 import com.zbkj.overseas.model.OverseasChatSession;
 import com.zbkj.overseas.request.ChatNoteRequest;
 import com.zbkj.overseas.request.ChatPingRequest;
+import com.zbkj.overseas.request.ChatProductRequest;
 import com.zbkj.overseas.request.ChatReplyRequest;
 import com.zbkj.overseas.request.ChatSendRequest;
 import com.zbkj.overseas.request.ChatStartRequest;
 import com.zbkj.overseas.request.ChatStatusRequest;
 import com.zbkj.overseas.request.ChatTypingRequest;
 import com.zbkj.overseas.response.ChatMessageResponse;
+import com.zbkj.overseas.response.ChatProductResponse;
 import com.zbkj.overseas.response.ChatSessionResponse;
 import com.zbkj.overseas.response.ChatStartResponse;
 import com.zbkj.overseas.response.ChatThreadResponse;
@@ -71,6 +75,7 @@ public class OverseasChatServiceImpl implements OverseasChatService {
                 existing.setCurrentPage(page);
                 existing.setPageViews((existing.getPageViews() == null ? 0 : existing.getPageViews()) + 1);
             }
+            applyProduct(existing, request);
             sessionDao.updateById(existing);
             return startResponse(existing);
         }
@@ -107,6 +112,7 @@ public class OverseasChatServiceImpl implements OverseasChatService {
         session.setPageViews(1);
         session.setStatus("open");
         session.setNote("");
+        applyProduct(session, request);
         Date now = new Date();
         session.setLastSeenAt(now);
         session.setCreateTime(now);
@@ -364,7 +370,57 @@ public class OverseasChatServiceImpl implements OverseasChatService {
         response.setVisitorReadMsgId(session.getVisitorReadMsgId() == null ? 0L : session.getVisitorReadMsgId());
         response.setVisitorTyping(ChatProfileUtil.isTyping(session.getVisitorTypingAt()));
         response.setAgentTyping(ChatProfileUtil.isTyping(session.getAgentTypingAt()));
+        response.setProduct(parseProduct(session.getProduct()));
         return response;
+    }
+
+    /**
+     * Product attachment contract (mirrors the Node backend): a product
+     * object on start sets/replaces the session's snapshot,
+     * clearProduct=true removes it, and neither leaves it untouched.
+     */
+    private void applyProduct(OverseasChatSession session, ChatStartRequest request) {
+        if (request == null) {
+            return;
+        }
+        if (request.getProduct() != null) {
+            session.setProduct(serializeProduct(request.getProduct()));
+        } else if (Boolean.TRUE.equals(request.getClearProduct())) {
+            session.setProduct("");
+        }
+    }
+
+    /** Sanitise + serialise a product snapshot for storage (JSON string). */
+    private String serializeProduct(ChatProductRequest product) {
+        String name = trimTo(product.getName(), 200);
+        if (name.isEmpty()) {
+            return "";
+        }
+        String image = trimTo(product.getImage(), 1000);
+        if (!image.isEmpty() && !image.startsWith("/") && !image.startsWith("http://")
+                && !image.startsWith("https://") && !image.startsWith("//")) {
+            image = "";
+        }
+        JSONObject json = new JSONObject();
+        json.set("id", trimTo(product.getId(), 64));
+        json.set("name", name);
+        json.set("image", image);
+        json.set("priceLabel", trimTo(product.getPriceLabel(), 64));
+        json.set("negotiable", Boolean.TRUE.equals(product.getNegotiable()));
+        return json.toString();
+    }
+
+    /** Parse a stored snapshot back into the response shape (null if none). */
+    private ChatProductResponse parseProduct(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return null;
+        }
+        try {
+            ChatProductResponse product = JSONUtil.toBean(JSONUtil.parseObj(raw), ChatProductResponse.class);
+            return product == null || StrUtil.isBlank(product.getName()) ? null : product;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private ChatMessageResponse toMessageResponse(OverseasChatMessage message) {

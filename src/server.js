@@ -174,7 +174,8 @@ db.exec(`
     agent_typing_at TEXT NOT NULL DEFAULT '',
     visitor_read_msg_id INTEGER NOT NULL DEFAULT 0,
     note TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'open'
+    status TEXT NOT NULL DEFAULT 'open',
+    product TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,7 +238,11 @@ for (const col of [
   "page_views INTEGER NOT NULL DEFAULT 0", "last_seen_at TEXT NOT NULL DEFAULT ''",
   "suspect_bot INTEGER NOT NULL DEFAULT 0", "visitor_typing_at TEXT NOT NULL DEFAULT ''",
   "agent_typing_at TEXT NOT NULL DEFAULT ''", "visitor_read_msg_id INTEGER NOT NULL DEFAULT 0",
-  "note TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'open'"
+  "note TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'open'",
+  // Product snapshot the visitor is asking about (JSON: id/name/image/
+  // priceLabel/negotiable), set when they tap 询价 on a product and the
+  // chat opens with that product attached.
+  "product TEXT NOT NULL DEFAULT ''"
 ]) {
   try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`) } catch { /* already there */ }
 }
@@ -1294,8 +1299,29 @@ function chatSessionOut(s) {
     lastSeenAt: s.last_seen_at || '', online: chatOnline(s),
     suspectBot: s.suspect_bot === 1, msgCount: n,
     status: s.status || 'open', note: s.note || '',
+    product: parseJsonCol(s.product, null),
     visitorReadMsgId: s.visitor_read_msg_id || 0,
     visitorTyping: chatTyping(s.visitor_typing_at), agentTyping: chatTyping(s.agent_typing_at)
+  }
+}
+
+// Sanitise the product snapshot a visitor attaches to a chat session
+// (they tapped 询价 on a product card / detail page). Returns the plain
+// object to store as JSON, or null when the payload is unusable — the
+// caller treats null as "clear the stored snapshot".
+function sanitizeChatProduct(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const text = (x, max) => String(x ?? '').trim().slice(0, max)
+  const name = text(v.name, 200)
+  if (!name) return null
+  let image = text(v.image, 1000)
+  if (image && !/^(https?:)?\/\//i.test(image) && !image.startsWith('/')) image = ''
+  return {
+    id: text(v.id, 64),
+    name,
+    image,
+    priceLabel: text(v.priceLabel, 64),
+    negotiable: v.negotiable === true || v.negotiable === 1
   }
 }
 
@@ -1751,6 +1777,11 @@ const server = createServer(async (req, res) => {
       const ip = clientIpOf(req)
       const nowIso = new Date().toISOString()
       const existing = chatSessionByToken(String(body.token || req.headers['x-chat-token'] || '').trim())
+      // Product attachment contract: a `product` object sets/replaces the
+      // snapshot, `clearProduct: true` removes it, neither leaves it as is.
+      const hasProduct = Object.prototype.hasOwnProperty.call(body, 'product') && body.product != null
+      const cleanProduct = hasProduct ? sanitizeChatProduct(body.product) : null
+      const productJson = cleanProduct ? JSON.stringify(cleanProduct) : ''
       if (existing) {
         // Reuse: refresh presence, and follow the visitor to a new page.
         const page = chatPageLabel(body.page, body.pageTitle)
@@ -1759,6 +1790,11 @@ const server = createServer(async (req, res) => {
             .run(nowIso, page, existing.id)
         } else {
           db.prepare('UPDATE chat_sessions SET last_seen_at = ? WHERE id = ?').run(nowIso, existing.id)
+        }
+        if (hasProduct) {
+          db.prepare('UPDATE chat_sessions SET product = ? WHERE id = ?').run(productJson, existing.id)
+        } else if (body.clearProduct === true) {
+          db.prepare("UPDATE chat_sessions SET product = '' WHERE id = ?").run(existing.id)
         }
         return send(res, 200, { sessionId: existing.id, token: existing.visitor_token, name: existing.visitor_name })
       }
@@ -1769,12 +1805,12 @@ const server = createServer(async (req, res) => {
       const local = isPrivateIp(ip)
       const info = db.prepare(`INSERT INTO chat_sessions
         (visitor_token, visitor_name, lang, created_at, last_msg_at, ip, country, device, browser, os,
-         referrer, current_page, page_views, last_seen_at, suspect_bot, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'open')`)
+         referrer, current_page, page_views, last_seen_at, suspect_bot, status, product)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'open', ?)`)
         .run(token, name, LANGS.includes(body.lang) ? body.lang : 'en', nowIso, nowIso,
           ip, local ? '本地/内网' : '', ua.device, ua.browser, ua.os,
           String(body.referrer || '').trim().slice(0, 500), chatPageLabel(body.page, body.pageTitle),
-          nowIso, ua.suspectBot ? 1 : 0)
+          nowIso, ua.suspectBot ? 1 : 0, productJson)
       const sessionId = Number(info.lastInsertRowid)
       if (!local) lookupChatGeo(sessionId, ip)
       return send(res, 201, { sessionId, token, name })

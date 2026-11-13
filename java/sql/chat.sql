@@ -56,6 +56,9 @@ ALTER TABLE eb_overseas_chat_session ADD COLUMN agent_typing_at DATETIME NULL CO
 ALTER TABLE eb_overseas_chat_session ADD COLUMN visitor_read_msg_id BIGINT NOT NULL DEFAULT 0 COMMENT '访客已读到的最大客服消息 id';
 ALTER TABLE eb_overseas_chat_session ADD COLUMN note VARCHAR(2000) NOT NULL DEFAULT '' COMMENT '内部备注（访客不可见）';
 ALTER TABLE eb_overseas_chat_session ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'open' COMMENT 'open/closed，访客发消息自动重开';
+-- Product snapshot the visitor is asking about (询价 opens the chat with
+-- the product attached). JSON: id/name/image/priceLabel/negotiable.
+ALTER TABLE eb_overseas_chat_session ADD COLUMN product TEXT NULL COMMENT '访客正在咨询的商品快照 JSON（id/name/image/priceLabel/negotiable），点询价打开聊天时写入';
 
 -- Give the shipped non-super roles the new "chat" menu permission.
 -- NOTE: these UPDATEs reset 运营 / 外贸员 to the shipped defaults. If you

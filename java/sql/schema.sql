@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_chat_session (
     visitor_read_msg_id    BIGINT       NOT NULL DEFAULT 0 COMMENT '访客已读到的最大客服消息 id',
     note                   VARCHAR(2000) NOT NULL DEFAULT '' COMMENT '内部备注（访客不可见）',
     status                 VARCHAR(16)  NOT NULL DEFAULT 'open' COMMENT 'open/closed，访客发消息自动重开',
+    product                TEXT         NULL COMMENT '访客正在咨询的商品快照 JSON（id/name/image/priceLabel/negotiable），点询价打开聊天时写入',
     last_msg_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     create_time            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),

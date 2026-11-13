@@ -28,4 +28,10 @@ public class ChatStartRequest {
 
     @Schema(description = "当前页面标题（document.title），可空")
     private String pageTitle;
+
+    @Schema(description = "附带商品快照（点询价打开聊天时传），不传则不改变会话已存商品")
+    private ChatProductRequest product;
+
+    @Schema(description = "true = 移除会话已附带的商品（访客在商品卡上点了移除）")
+    private Boolean clearProduct;
 }
