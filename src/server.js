@@ -13,6 +13,13 @@
 //   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
 //   POST /api/chat/ping                (visitor heartbeat: online + current page)
 //   POST /api/chat/typing              (visitor is typing)
+//   GET  /api/formula/brands           (paint formula library: enabled car brands)
+//   GET  /api/formula/models?brandId=  (car models, linked to the brand picker)
+//   GET  /api/formula/search?brandId=&modelId=&keyword=&page=&pageSize=  (car colours)
+//   GET  /api/formula/colors/:id       (colour detail: colour numbers + LAB + formula lines)
+//   GET|POST|PUT|DELETE /api/admin/formula/<entity>[/:id]  (formula dict CRUD; perm formula)
+//   GET|POST|PUT|DELETE /api/admin/formula-numbers[/:id]   (colour numbers CRUD; perm formula)
+//   GET|PUT /api/admin/formula-numbers/:id/lines           (replace a number's formula lines)
 //   POST /api/track                    (visitor statistics beacon: view/click/heartbeat)
 //   GET  /api/admin/visitors           (visitor stats: summary/countries/trend/list; perm visitors)
 //   GET  /api/admin/visitors/:token/events  (one visitor's view+click timeline)
@@ -216,6 +223,111 @@ for (const col of [
 ]) {
   try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`) } catch { /* already there */ }
 }
+// ---- Paint formula library (replicated from the sfsy/JBolt system) ----
+// Same table names, column names and column order as the source MySQL
+// schema (sfsy_db_new), with types loosely mapped to SQLite (bigint/int
+// -> INTEGER, varchar/char -> TEXT, double -> REAL, datetime -> TEXT).
+// Data arrives via tools/import-sfsy.js from the bundled dump
+// (data/sfsy_data.sql.gz). The bh/_0 tables are the source system's
+// numbered/backup variants — replicated as-is, not yet queried.
+// Keep this DDL in sync with tools/import-sfsy.js.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS car_brand (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, name_first TEXT, country TEXT, url TEXT,
+    letter_rank INTEGER, enable TEXT DEFAULT '1', is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS car_model (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand TEXT, brand_id INTEGER, model TEXT NOT NULL, sort_rank INTEGER,
+    enable TEXT DEFAULT '1', update_time TEXT, is_deleted TEXT DEFAULT '0',
+    create_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS car_country (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, name_en TEXT, language TEXT, code INTEGER, state INTEGER,
+    enable TEXT, sort_rank INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS car_factory (
+    id INTEGER PRIMARY KEY,
+    name TEXT, brand_id INTEGER, country TEXT, state INTEGER,
+    enable TEXT, sort_rank INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS color_card (
+    id INTEGER PRIMARY KEY,
+    name TEXT, code TEXT, enable TEXT, is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS color_masterbatch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL UNIQUE, name TEXT NOT NULL, eng_name TEXT NOT NULL,
+    type TEXT, mark TEXT, enable TEXT, is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS car_color (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL, model_id INTEGER NOT NULL,
+    car_color TEXT, factory_color TEXT, color_num TEXT, card_num TEXT,
+    car_image TEXT DEFAULT 'https://cdn.tujia.club/tujia/car/car.jpg',
+    enable TEXT DEFAULT '1', is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS car_color0 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL, model_id INTEGER NOT NULL,
+    car_color TEXT, factory_color TEXT, color_num TEXT, card_num TEXT,
+    car_image TEXT DEFAULT 'https://cdn.tujia.club/tujia/car/car.jpg',
+    enable TEXT DEFAULT '1', is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS car_color_bh (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER, model_id INTEGER, car_color TEXT, factory_color TEXT,
+    innercode TEXT, description TEXT, car_image TEXT, enable TEXT DEFAULT '1',
+    year TEXT DEFAULT '0', devcount TEXT, devgroup TEXT, colorcode TEXT,
+    innergroup TEXT, formulas TEXT, devsite TEXT
+  );
+  CREATE TABLE IF NOT EXISTS color_formula (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colornum_id INTEGER NOT NULL, name TEXT, model TEXT NOT NULL,
+    dose REAL NOT NULL, color_rank INTEGER NOT NULL,
+    enable TEXT, is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS color_formula_bh (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    innergroup TEXT NOT NULL, fname TEXT, fdesc TEXT, lalm REAL, ordeid INTEGER,
+    enable TEXT, is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS color_number (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL, color_name TEXT, lab_l REAL, lab_a REAL, lab_b REAL,
+    enable TEXT DEFAULT '1', is_deleted TEXT DEFAULT '0',
+    create_time TEXT, update_time TEXT, create_user_id TEXT, update_user_id TEXT
+  );
+  CREATE TABLE IF NOT EXISTS color_number_relation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    car_color INTEGER, color_number INTEGER, enable TEXT DEFAULT '1'
+  );
+  CREATE TABLE IF NOT EXISTS color_brand (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, logo TEXT, enable TEXT DEFAULT '1',
+    update_time TEXT, create_time TEXT, create_user_id TEXT, update_user_id TEXT,
+    is_deleted TEXT DEFAULT '0'
+  );
+  CREATE TABLE IF NOT EXISTS color_collection (
+    id INTEGER PRIMARY KEY,
+    wechat_user_id INTEGER NOT NULL, nickname TEXT, model_id INTEGER,
+    color_id INTEGER, brand_id INTEGER, mp_id INTEGER, create_time TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_car_model_brand ON car_model (brand_id);
+  CREATE INDEX IF NOT EXISTS idx_car_color_brand_model ON car_color (brand_id, model_id);
+  CREATE INDEX IF NOT EXISTS idx_color_formula_num ON color_formula (colornum_id);
+  CREATE INDEX IF NOT EXISTS idx_relation_color ON color_number_relation (car_color);
+  CREATE INDEX IF NOT EXISTS idx_relation_number ON color_number_relation (color_number);
+`)
 mkdirSync(UPLOAD_DIR, { recursive: true })
 
 function seedIfEmpty() {
@@ -332,6 +444,7 @@ const PERMISSIONS = [
   { key: 'rfq', label: '询价列表' },
   { key: 'chat', label: '在线聊天' },
   { key: 'visitors', label: '访客统计' },
+  { key: 'formula', label: '配方管理' },
   { key: 'config', label: '站点配置' },
   { key: 'users', label: '用户与角色' }
 ]
@@ -356,7 +469,7 @@ function seedAdminAccounts() {
   if (n === 0) {
     const ins = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, ?)')
     ins.run('超级管理员', JSON.stringify(['*']), 1)
-    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config', 'visitors']), 0)
+    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config', 'visitors', 'formula']), 0)
     ins.run('外贸员', JSON.stringify(['rfq', 'chat', 'visitors']), 0)
   }
   const { n: userCount } = db.prepare('SELECT COUNT(*) AS n FROM admin_users').get()
@@ -415,6 +528,7 @@ function requiredPerm(path) {
   if (path === '/api/admin/rfq') return 'rfq'
   if (path.startsWith('/api/admin/chat')) return 'chat'
   if (path.startsWith('/api/admin/visitors')) return 'visitors'
+  if (path.startsWith('/api/admin/formula')) return 'formula'
   if (path === '/api/admin/site-config') return 'config'
   return null
 }
@@ -589,6 +703,175 @@ function visitorOut(v) {
     firstSeen: v.first_seen || '', lastSeen: v.last_seen || '', online,
     visitStartedAt: v.visit_started_at || '', dwellSec: v.dwell_sec || 0, currentDwellSec
   }
+}
+
+// ---- Paint formula library: shared helpers ----
+// The imported data carries snowflake ids (up to 19 digits) that exceed
+// JS Number's safe range. Statements over the formula tables therefore
+// read BigInts, ids are serialised as strings, and id lookups bind the
+// raw digit string — SQLite applies the column's INTEGER affinity, so
+// comparisons and inserts stay exact.
+function fq(sql) {
+  const stmt = db.prepare(sql)
+  if (typeof stmt.setReadBigInts === 'function') stmt.setReadBigInts(true)
+  return stmt
+}
+function numOrStr(v) {
+  if (typeof v !== 'bigint') return v
+  return v <= 9007199254740991n && v >= -9007199254740991n ? Number(v) : String(v)
+}
+function camelKey(col) { return col.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) }
+function snakeKey(field) { return field.replace(/([A-Z])/g, '_$1').toLowerCase() }
+// DB row -> API object for the formula tables: camelCase keys, id as a
+// string, the enable char flag as a boolean, audit columns hidden.
+function formulaRowOut(row) {
+  const out = {}
+  for (const [col, v] of Object.entries(row)) {
+    if (col === 'is_deleted' || col === 'create_user_id' || col === 'update_user_id') continue
+    const key = camelKey(col)
+    out[key] = key === 'id' ? String(v) : numOrStr(v)
+  }
+  if ('enable' in out) out.enable = out.enable === '1' || out.enable === 1
+  return out
+}
+// The source system stamps 'YYYY-MM-DD HH:mm:ss'; keep that shape for
+// rows the admin creates in the formula tables.
+function nowStamp() { return new Date().toISOString().slice(0, 19).replace('T', ' ') }
+
+// Admin CRUD definitions for the formula dictionary tables. Field types:
+// s = string (nullable), n = integer (nullable), f = float (nullable),
+// b = enable flag stored as char '1'/'0'. `required` fields are enforced
+// on create; `hasDeleted` tables hide is_deleted='1' rows from lists.
+const FORMULA_CRUD = {
+  'car-brands': {
+    table: 'car_brand', order: 'letter_rank, id', hasDeleted: true,
+    search: ['name'],
+    fields: { name: 's', nameFirst: 's', country: 's', url: 's', letterRank: 'n', enable: 'b' }
+  },
+  'car-models': {
+    table: 'car_model', order: 'sort_rank, id', hasDeleted: true,
+    search: ['model', 'brand'], filters: { brandId: 'brand_id' },
+    fields: { brand: 's', brandId: 'n', model: 's', sortRank: 'n', enable: 'b' },
+    required: ['model']
+  },
+  'car-countries': {
+    table: 'car_country', order: 'sort_rank, id', hasDeleted: false,
+    search: ['name', 'name_en'],
+    fields: { name: 's', nameEn: 's', language: 's', code: 'n', state: 'n', enable: 'b', sortRank: 'n' }
+  },
+  'car-factories': {
+    table: 'car_factory', order: 'sort_rank, id', hasDeleted: false,
+    search: ['name'], filters: { brandId: 'brand_id' },
+    fields: { name: 's', brandId: 'n', country: 's', state: 'n', enable: 'b', sortRank: 'n' }
+  },
+  'color-cards': {
+    table: 'color_card', order: 'id', hasDeleted: true,
+    search: ['name', 'code'],
+    fields: { name: 's', code: 's', enable: 'b' }
+  },
+  'masterbatches': {
+    table: 'color_masterbatch', order: 'id', hasDeleted: true,
+    search: ['model', 'name', 'eng_name'],
+    fields: { model: 's', name: 's', engName: 's', type: 's', mark: 's', enable: 'b' },
+    required: ['model', 'name', 'engName']
+  },
+  'car-colors': {
+    table: 'car_color', order: 'id DESC', hasDeleted: true,
+    search: ['car_color', 'color_num', 'factory_color', 'card_num'],
+    filters: { brandId: 'brand_id', modelId: 'model_id' },
+    fields: {
+      brandId: 'n', modelId: 'n', carColor: 's', factoryColor: 's',
+      colorNum: 's', cardNum: 's', carImage: 's', enable: 'b'
+    },
+    required: ['brandId', 'modelId']
+  },
+  'color-brands': {
+    table: 'color_brand', order: 'id', hasDeleted: true,
+    search: ['name'],
+    fields: { name: 's', logo: 's', enable: 'b' }
+  }
+}
+const FORMULA_NUMBER_CFG = {
+  table: 'color_number', order: 'id', hasDeleted: true,
+  search: ['name', 'color_name'],
+  fields: { name: 's', colorName: 's', labL: 'f', labA: 'f', labB: 'f', enable: 'b' },
+  required: ['name']
+}
+
+function formulaList(cfg, url) {
+  const page = Math.max(1, Number(url.searchParams.get('page') || 1))
+  const pageSize = Math.min(200, Math.max(1, Number(url.searchParams.get('pageSize') || 20)))
+  const where = []
+  const args = []
+  if (cfg.hasDeleted) where.push("is_deleted = '0'")
+  const keyword = String(url.searchParams.get('keyword') || '').trim()
+  if (keyword && cfg.search.length) {
+    where.push(`(${cfg.search.map((c) => `${c} LIKE ?`).join(' OR ')})`)
+    for (let i = 0; i < cfg.search.length; i++) args.push(`%${keyword}%`)
+  }
+  for (const [param, col] of Object.entries(cfg.filters || {})) {
+    const v = url.searchParams.get(param)
+    if (v !== null && v !== '') { where.push(`${col} = ?`); args.push(v) }
+  }
+  const wsql = where.length ? ` WHERE ${where.join(' AND ')}` : ''
+  const { n } = fq(`SELECT COUNT(*) AS n FROM ${cfg.table}${wsql}`).get(...args)
+  const rows = fq(`SELECT * FROM ${cfg.table}${wsql} ORDER BY ${cfg.order} LIMIT ? OFFSET ?`)
+    .all(...args, pageSize, (page - 1) * pageSize)
+  return { list: rows.map(formulaRowOut), total: Number(n), page, pageSize }
+}
+
+// Pick the writable fields out of an admin payload, coerced per type.
+// Returns { values } or { error } (missing required field on create).
+function formulaValues(cfg, body, isCreate) {
+  const values = {}
+  for (const [field, type] of Object.entries(cfg.fields)) {
+    if (body[field] === undefined) continue
+    let v = body[field]
+    if (type === 'b') v = v ? '1' : '0'
+    // Long digit strings (snowflake ids used as foreign keys) stay
+    // strings: SQLite applies the column's INTEGER affinity exactly,
+    // while a detour through Number would corrupt them past 2^53.
+    else if (type === 'n') v = v === '' || v === null ? null
+      : (typeof v === 'string' && /^-?\d{16,}$/.test(v.trim()) ? v.trim() : Math.trunc(Number(v) || 0))
+    else if (type === 'f') v = v === '' || v === null ? null : (Number(v) || 0)
+    else v = v === null ? null : String(v)
+    values[snakeKey(field)] = v
+  }
+  if (isCreate) {
+    for (const field of cfg.required || []) {
+      const v = values[snakeKey(field)]
+      if (v === undefined || v === null || v === '') return { error: `${field} is required` }
+    }
+    if (values.enable === undefined && 'enable' in cfg.fields) values.enable = '1'
+  }
+  return { values }
+}
+
+function formulaInsert(cfg, values) {
+  const stamp = nowStamp()
+  const cols = { ...values }
+  // Stamp audit times only where the source table carries them.
+  const probe = fq(`SELECT name FROM pragma_table_info('${cfg.table}')`).all().map((r) => r.name)
+  if (probe.includes('create_time') && cols.create_time === undefined) cols.create_time = stamp
+  if (probe.includes('update_time') && cols.update_time === undefined) cols.update_time = stamp
+  const names = Object.keys(cols)
+  const info = fq(`INSERT INTO ${cfg.table} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`)
+    .run(...names.map((c) => cols[c]))
+  return String(info.lastInsertRowid)
+}
+
+function formulaUpdate(cfg, id, values) {
+  const probe = fq(`SELECT name FROM pragma_table_info('${cfg.table}')`).all().map((r) => r.name)
+  const cols = { ...values }
+  if (probe.includes('update_time')) cols.update_time = nowStamp()
+  const names = Object.keys(cols)
+  if (!names.length) return
+  fq(`UPDATE ${cfg.table} SET ${names.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`)
+    .run(...names.map((c) => cols[c]), id)
+}
+
+function formulaGet(cfg, id) {
+  return fq(`SELECT * FROM ${cfg.table} WHERE id = ?`).get(id)
 }
 
 // Geo for a tracking visitor: reuse the region already resolved for the
@@ -1343,6 +1626,184 @@ const server = createServer(async (req, res) => {
       const status = body.status === 'closed' ? 'closed' : 'open'
       db.prepare('UPDATE chat_sessions SET status = ? WHERE id = ?').run(status, id)
       return send(res, 200, { ok: true, status })
+    }
+
+    // ---- Paint formula library: public search ----
+    // Mirrors the source system's front APIs (homeSearch / brand and
+    // model pickers / colour detail + formula datas) in this backend's
+    // REST shape. Only enabled, non-deleted rows are visible.
+    if (req.method === 'GET' && path === '/api/formula/brands') {
+      const rows = fq("SELECT id, name FROM car_brand WHERE enable = '1' AND is_deleted = '0' ORDER BY letter_rank, id").all()
+      return send(res, 200, rows.map((r) => ({ id: String(r.id), name: r.name || '' })))
+    }
+    if (req.method === 'GET' && path === '/api/formula/models') {
+      const brandId = url.searchParams.get('brandId') || ''
+      const rows = brandId
+        ? fq("SELECT id, brand_id, model FROM car_model WHERE brand_id = ? AND enable = '1' AND is_deleted = '0' ORDER BY sort_rank, id").all(brandId)
+        : fq("SELECT id, brand_id, model FROM car_model WHERE enable = '1' AND is_deleted = '0' ORDER BY sort_rank, id").all()
+      return send(res, 200, rows.map((r) => ({ id: String(r.id), brandId: r.brand_id === null ? '' : String(r.brand_id), model: r.model || '' })))
+    }
+    if (req.method === 'GET' && path === '/api/formula/search') {
+      const brandId = url.searchParams.get('brandId') || ''
+      const modelId = url.searchParams.get('modelId') || ''
+      const keyword = String(url.searchParams.get('keyword') || '').trim()
+      const page = Math.max(1, Number(url.searchParams.get('page') || 1))
+      const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize') || 15)))
+      const where = ["cc.enable = '1'", "cc.is_deleted = '0'"]
+      const args = []
+      if (brandId) { where.push('cc.brand_id = ?'); args.push(brandId) }
+      if (modelId) { where.push('cc.model_id = ?'); args.push(modelId) }
+      if (keyword) {
+        where.push('(cc.car_color LIKE ? OR cc.color_num LIKE ? OR cc.factory_color LIKE ? OR cc.card_num LIKE ?)')
+        for (let i = 0; i < 4; i++) args.push(`%${keyword}%`)
+      }
+      const wsql = ` WHERE ${where.join(' AND ')}`
+      const { n } = fq(`SELECT COUNT(*) AS n FROM car_color cc${wsql}`).get(...args)
+      const rows = fq(`SELECT cc.*, b.name AS brand_name, m.model AS model_name
+          FROM car_color cc
+          LEFT JOIN car_brand b ON b.id = cc.brand_id
+          LEFT JOIN car_model m ON m.id = cc.model_id
+          ${wsql} ORDER BY cc.update_time DESC, cc.id DESC LIMIT ? OFFSET ?`)
+        .all(...args, pageSize, (page - 1) * pageSize)
+      return send(res, 200, {
+        items: rows.map((r) => ({
+          id: String(r.id),
+          brandId: String(r.brand_id), brandName: r.brand_name || '',
+          modelId: String(r.model_id), modelName: r.model_name || '',
+          carColor: r.car_color || '', factoryColor: r.factory_color || '',
+          colorNum: r.color_num || '', cardNum: r.card_num || '',
+          carImage: r.car_image || '', updateTime: r.update_time || ''
+        })),
+        total: Number(n), page, pageSize
+      })
+    }
+    const formulaColorMatch = path.match(/^\/api\/formula\/colors\/(\d+)$/)
+    if (req.method === 'GET' && formulaColorMatch) {
+      const id = formulaColorMatch[1]
+      const row = fq(`SELECT cc.*, b.name AS brand_name, m.model AS model_name
+          FROM car_color cc
+          LEFT JOIN car_brand b ON b.id = cc.brand_id
+          LEFT JOIN car_model m ON m.id = cc.model_id
+          WHERE cc.id = ? AND cc.is_deleted = '0'`).get(id)
+      if (!row) return send(res, 404, { error: 'color not found' })
+      // Colour numbers hang off the relation table (verified against the
+      // imported data: relation.car_color = car_color.id and
+      // relation.color_number = color_number.id — see import report).
+      const numbers = fq(`SELECT cn.* FROM color_number_relation r
+          JOIN color_number cn ON cn.id = r.color_number
+          WHERE r.car_color = ? AND r.enable = '1' AND cn.is_deleted = '0'
+          ORDER BY cn.id`).all(id)
+      const lineStmt = fq("SELECT id, model, name, dose, color_rank FROM color_formula WHERE colornum_id = ? AND is_deleted = '0' ORDER BY color_rank, id")
+      return send(res, 200, {
+        id: String(row.id),
+        brandId: String(row.brand_id), brandName: row.brand_name || '',
+        modelId: String(row.model_id), modelName: row.model_name || '',
+        carColor: row.car_color || '', factoryColor: row.factory_color || '',
+        colorNum: row.color_num || '', cardNum: row.card_num || '',
+        carImage: row.car_image || '', updateTime: row.update_time || '',
+        numbers: numbers.map((cn) => ({
+          id: String(cn.id), name: cn.name || '', colorName: cn.color_name || '',
+          labL: numOrStr(cn.lab_l), labA: numOrStr(cn.lab_a), labB: numOrStr(cn.lab_b),
+          formula: lineStmt.all(String(cn.id)).map((l) => ({
+            id: String(l.id), model: l.model || '', name: l.name || '',
+            dose: numOrStr(l.dose), colorRank: numOrStr(l.color_rank)
+          }))
+        }))
+      })
+    }
+
+    // ---- Admin: paint formula library CRUD (perm: formula) ----
+    const formulaCrudMatch = path.match(/^\/api\/admin\/formula\/([a-z-]+)(?:\/(\d+))?$/)
+    if (formulaCrudMatch && FORMULA_CRUD[formulaCrudMatch[1]]) {
+      const cfg = FORMULA_CRUD[formulaCrudMatch[1]]
+      const id = formulaCrudMatch[2]
+      if (req.method === 'GET' && !id) return send(res, 200, formulaList(cfg, url))
+      if (req.method === 'POST' && !id) {
+        const { values, error } = formulaValues(cfg, await readBody(req), true)
+        if (error) return send(res, 400, { error })
+        const newId = formulaInsert(cfg, values)
+        return send(res, 201, formulaRowOut(formulaGet(cfg, newId)))
+      }
+      if (req.method === 'PUT' && id) {
+        if (!formulaGet(cfg, id)) return send(res, 404, { error: 'record not found' })
+        const { values, error } = formulaValues(cfg, await readBody(req), false)
+        if (error) return send(res, 400, { error })
+        formulaUpdate(cfg, id, values)
+        return send(res, 200, formulaRowOut(formulaGet(cfg, id)))
+      }
+      if (req.method === 'DELETE' && id) {
+        // Physical delete, same as the catalogue modules (products /
+        // categories / brands all hard-delete from the admin console).
+        fq(`DELETE FROM ${cfg.table} WHERE id = ?`).run(id)
+        return send(res, 200, { ok: true })
+      }
+    }
+    if (path === '/api/admin/formula-numbers' && req.method === 'GET') {
+      return send(res, 200, formulaList(FORMULA_NUMBER_CFG, url))
+    }
+    if (path === '/api/admin/formula-numbers' && req.method === 'POST') {
+      const { values, error } = formulaValues(FORMULA_NUMBER_CFG, await readBody(req), true)
+      if (error) return send(res, 400, { error })
+      const newId = formulaInsert(FORMULA_NUMBER_CFG, values)
+      return send(res, 201, formulaRowOut(formulaGet(FORMULA_NUMBER_CFG, newId)))
+    }
+    const formulaNumberMatch = path.match(/^\/api\/admin\/formula-numbers\/(\d+)$/)
+    if (formulaNumberMatch && req.method === 'PUT') {
+      const id = formulaNumberMatch[1]
+      if (!formulaGet(FORMULA_NUMBER_CFG, id)) return send(res, 404, { error: 'record not found' })
+      const { values, error } = formulaValues(FORMULA_NUMBER_CFG, await readBody(req), false)
+      if (error) return send(res, 400, { error })
+      formulaUpdate(FORMULA_NUMBER_CFG, id, values)
+      return send(res, 200, formulaRowOut(formulaGet(FORMULA_NUMBER_CFG, id)))
+    }
+    if (formulaNumberMatch && req.method === 'DELETE') {
+      fq('DELETE FROM color_number WHERE id = ?').run(formulaNumberMatch[1])
+      return send(res, 200, { ok: true })
+    }
+    // A colour number's formula lines: read them, or replace the whole
+    // set in one PUT (the admin editor works on the full list at once).
+    const formulaLinesMatch = path.match(/^\/api\/admin\/formula-numbers\/(\d+)\/lines$/)
+    if (formulaLinesMatch && req.method === 'GET') {
+      const id = formulaLinesMatch[1]
+      if (!formulaGet(FORMULA_NUMBER_CFG, id)) return send(res, 404, { error: 'record not found' })
+      const rows = fq("SELECT id, model, name, dose, color_rank FROM color_formula WHERE colornum_id = ? AND is_deleted = '0' ORDER BY color_rank, id").all(id)
+      return send(res, 200, {
+        colorNumberId: id,
+        lines: rows.map((l) => ({
+          id: String(l.id), model: l.model || '', name: l.name || '',
+          dose: numOrStr(l.dose), colorRank: numOrStr(l.color_rank)
+        }))
+      })
+    }
+    if (formulaLinesMatch && req.method === 'PUT') {
+      const id = formulaLinesMatch[1]
+      if (!formulaGet(FORMULA_NUMBER_CFG, id)) return send(res, 404, { error: 'record not found' })
+      const body = await readBody(req)
+      if (!Array.isArray(body.lines)) return send(res, 400, { error: 'lines must be an array' })
+      const stamp = nowStamp()
+      db.exec('BEGIN')
+      try {
+        fq('DELETE FROM color_formula WHERE colornum_id = ?').run(id)
+        const ins = fq(`INSERT INTO color_formula
+          (colornum_id, name, model, dose, color_rank, enable, is_deleted, create_time, update_time)
+          VALUES (?, ?, ?, ?, ?, '1', '0', ?, ?)`)
+        body.lines.forEach((ln, i) => {
+          ins.run(id, String(ln.name || ''), String(ln.model || ''),
+            Number(ln.dose) || 0, Math.trunc(Number(ln.colorRank ?? ln.rank) || (i + 1)), stamp, stamp)
+        })
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
+      }
+      const rows = fq("SELECT id, model, name, dose, color_rank FROM color_formula WHERE colornum_id = ? AND is_deleted = '0' ORDER BY color_rank, id").all(id)
+      return send(res, 200, {
+        colorNumberId: id,
+        lines: rows.map((l) => ({
+          id: String(l.id), model: l.model || '', name: l.name || '',
+          dose: numOrStr(l.dose), colorRank: numOrStr(l.color_rank)
+        }))
+      })
     }
 
     // ---- Admin UI + uploaded images (static files; the UI asks for the token) ----

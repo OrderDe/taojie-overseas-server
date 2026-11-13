@@ -4,3 +4,7 @@ data/app.db-journal
 data/uploads/
 .env
 *.log
+
+# sfsy import data: stored as .sql.gz.b64 text (snapshot pushes are text-only);
+# the plain .sql.gz is a local build artifact of tools/import-sfsy.js inputs.
+data/sfsy_data.sql.gz

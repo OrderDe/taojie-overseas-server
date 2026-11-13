@@ -58,6 +58,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
             new PermissionResponse("rfq", "询价列表"),
             new PermissionResponse("chat", "在线聊天"),
             new PermissionResponse("visitors", "访客统计"),
+            new PermissionResponse("formula", "配方管理"),
             new PermissionResponse("config", "站点配置"),
             new PermissionResponse("users", "用户与角色"));
     private static final List<String> ALL_PERMS =
@@ -80,7 +81,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
     public void bootstrap() {
         if (roleDao.selectCount(new LambdaQueryWrapper<OverseasAdminRole>()) == 0) {
             insertRole("超级管理员", List.of("*"), true);
-            insertRole("运营", List.of("products", "categories", "rfq", "chat", "config", "visitors"), false);
+            insertRole("运营", List.of("products", "categories", "rfq", "chat", "config", "visitors", "formula"), false);
             insertRole("外贸员", List.of("rfq", "chat", "visitors"), false);
         }
         if (count() == 0 && StrUtil.isNotBlank(adminToken)) {
@@ -200,6 +201,9 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         }
         if (path.startsWith("/api/admin/visitors")) {
             return "visitors";
+        }
+        if (path.startsWith("/api/admin/formula")) {
+            return "formula";
         }
         if (path.equals("/api/admin/site-config")) {
             return "config";
