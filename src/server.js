@@ -422,76 +422,80 @@ const DEFAULT_CONFIG = {
   // {lang: text} map like product names) and a photo gallery. The PUT
   // handler shape-guards it (sanitizeProfileContent), so the storefront
   // can render whatever is stored without defensive checks.
-  // The default below is starter content taken from the company's own
-  // sfsy profile pages (jieshao_1/jieshao_2, zh+en) so the page is fully
-  // populated — and editable in the admin 「公司简介」 page — from day one;
-  // any config saved from the admin replaces it wholesale.
+  // The default below is the WILLIS / Meishicai company profile taken
+  // from williscarpaint.com's About page (Shaoguan Xinyue Chemical Co.,
+  // Ltd, zh+en) so the page is fully populated — and editable in the
+  // admin 「公司简介」 page — from day one; any config saved from the
+  // admin replaces it wholesale.
   profileContent: {
     heroImages: [
-      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8361.jpg',
-      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8362.jpg',
-      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8363.jpg',
-      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8364.jpg',
-      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8365.jpg'
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779616076263.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779623142310.png',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779607313419.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779609121611.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779615218098.jpg'
     ],
     sections: [
       {
-        title: { zh: '公司简介', en: 'Company Introduction' },
+        title: { zh: '关于美诗彩', en: 'About Meishicai' },
         body: {
-          zh: '广州三合涂料科技有限公司是一家高新技术企业，专注于汽车漆和工业漆的研发、生产与销售，拥有超过二十年的涂料生产经验。',
-          en: 'Guangzhou Sanhe Coating Technology Co., Ltd. is a high-tech enterprise, focusing on the research and development, production, and sales of automotive and industrial coatings, with over twenty years of experience in paint production.'
+          zh: '公司位于广东省韶关市翁源县（韶关新粤化工有限公司），是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。',
+          en: 'Nestled in the pleasant surroundings of Shaoguan City — Wengyuan County, Shaoguan, Guangdong Province, China (Shaoguan Xinyue Chemical Co., Ltd) — we are a modern technological enterprise specializing in the R&D, production, sales and import & export trade of automotive coatings and industrial coatings. We boast over 15 years of global export experience.'
         },
         bullets: []
       },
       {
-        title: { zh: '产品系列', en: 'Product Series' },
-        body: {},
+        title: { zh: '产品系列', en: 'Product Lineup' },
+        body: {
+          zh: '公司主营产品包括清漆、固化剂、稀释剂、1K 与 2K 素色漆、1K 珍珠漆、1K 水晶珍珠漆、1K 银粉漆、原子灰、1K 与 2K 底漆及其他辅料。',
+          en: 'Our main product lineup includes clear coats, hardeners, thinners, 1K & 2K solid color paints, 1K pearl paints, 1K crystal pearl paints, 1K silver paints, body filler, 1K & 2K primers and other auxiliary materials.'
+        },
         bullets: [
-          { zh: '汽车漆', en: 'Automotive Coatings' },
-          { zh: '清漆', en: 'Clear Coats' },
-          { zh: '固化剂', en: 'Hardeners' },
-          { zh: '稀释剂', en: 'Diluents' },
-          { zh: '1K2K色漆辅料', en: '1K2K Color Coatings Auxiliary' }
+          { zh: '清漆', en: 'Clear coat' },
+          { zh: '固化剂', en: 'Hardener' },
+          { zh: '稀释剂', en: 'Thinner' },
+          { zh: '1K 与 2K 素色漆', en: '1K & 2K solid color paints' },
+          { zh: '1K 珍珠漆与水晶珍珠漆', en: '1K pearl & crystal pearl paints' },
+          { zh: '1K 银粉漆', en: '1K silver paints' },
+          { zh: '原子灰', en: 'Body filler' },
+          { zh: '1K 与 2K 底漆', en: '1K & 2K primers' }
         ]
       },
       {
-        title: { zh: '技术研发', en: 'Technology R&D' },
+        title: { zh: '质量与认证', en: 'Quality & Certifications' },
         body: {
-          zh: '公司高度重视技术研发，建立了专业的研发及售后团队。我们不断引进先进的生产和检测设备，以确保客户产品的高品质。',
-          en: 'The company places great emphasis on technology research and development, establishing a professional R&D and after-sales team. We continuously introduce advanced production and testing equipment to ensure the high quality of our customers\' products.'
+          zh: '公司配备先进的生产设施与可靠的检测体系，并建有完善的售后服务框架，持续保障卓越的产品品质与令人满意的服务。公司已通过 ISO9001 质量管理体系认证与 ISO14001 环境管理体系认证。',
+          en: 'Equipped with advanced production facilities and reliable testing systems, backed by a comprehensive after-sales service framework, we consistently guarantee premium product quality and satisfactory service. The company has obtained ISO9001 Quality Management System Certification and ISO14001 Environmental Management System Certification.'
         },
         bullets: []
       },
       {
-        title: { zh: '产品优势', en: 'Product Advantages' },
-        body: {},
+        title: { zh: '技术团队与服务', en: 'Technical Team & Support' },
+        body: {
+          zh: '作为涂料行业的大型专业制造商，公司拥有一支具备 10 年以上行业经验的技术团队。热忱欢迎全球客户浏览官网并随时垂询，我们随时准备为您提供优质服务。',
+          en: 'As a large-scale professional manufacturer in the coatings industry, we have a technical team with more than 10 years of industry expertise. We warmly welcome customers worldwide to browse our official website and contact us for any inquiries — we are ready to deliver excellent services for you.'
+        },
         bullets: [
-          { zh: '质量优良', en: 'High Quality' },
-          { zh: '稳定性好', en: 'Good Stability' },
-          { zh: '附着力强', en: 'Strong Adhesion' },
-          { zh: '遮盖力好', en: 'Good Coverage' },
-          { zh: '耐候性好', en: 'Excellent Weather Resistance' },
-          { zh: '光泽饱满', en: 'Full Gloss' }
+          { zh: '专业客服一对一咨询，充分了解您的需求', en: 'One-on-one consultation with a professional customer service representative to understand your needs' },
+          { zh: '长达一年的专属一对一技术支持，现场操作问题由技术团队全程跟进', en: 'Dedicated one-on-one technical support for a full year — all on-site operational issues are handled by our technical team' }
         ]
       },
       {
-        title: { zh: '市场地位', en: 'Market Position' },
-        body: {
-          zh: '广州三合涂料已成为国内领先的涂料生产厂家，产品远销全球30多个国家。',
-          en: 'Guangzhou Sanhe Coating has become a leading domestic coating manufacturer, with products sold in over 30 countries worldwide.'
-        },
-        bullets: []
-      },
-      {
-        title: { zh: '生产与研发', en: 'Production and R&D' },
-        body: {
-          zh: '公司重视精湛技术，不断引进先进的涂料生产设备和检测设备。生产包括汽车修补漆、工业漆、机械金属漆等多种高端、质量稳定的涂料。设有研发部门，从原材料检测到生产过程严格控制品质保证。致力于新产品的开发，为客户提供最专业的服务。',
-          en: 'The company values exquisite technology and continuously introduces advanced coating production and testing equipment. We produce a variety of high-end, stable quality coatings, including automotive touch-up paints, industrial coatings, and machinery metal coatings. We have a dedicated R&D department that strictly controls the quality from raw material testing to the production process to ensure quality assurance. We are committed to the development of new products, providing the most professional services to our customers.'
-        },
-        bullets: []
+        title: { zh: '企业概况', en: 'Company Facts' },
+        body: {},
+        bullets: [
+          { zh: '主营产品：清漆、稀释剂、固化剂、2K 漆、1K 漆', en: 'Main products: clear coat, thinner, hardener, 2K paint, 1K paint' },
+          { zh: '年营业额：500 万 – 1000 万美元', en: 'Annual revenue: US$5 Million – US$10 Million' },
+          { zh: '地址：广东省韶关市翁源县', en: 'Location: Wengyuan County, Shaoguan, Guangdong Province, China' }
+        ]
       }
     ],
-    gallery: []
+    gallery: [
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779624434764.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260525/1779699855501.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779609960810.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779612122478.jpg'
+    ]
   },
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).

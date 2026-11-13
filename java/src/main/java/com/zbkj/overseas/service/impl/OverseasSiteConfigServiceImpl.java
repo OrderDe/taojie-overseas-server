@@ -60,58 +60,62 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("wechat", "");
     }
 
-    // Starter company-profile content, mirroring the Node backend's
-    // DEFAULT_CONFIG: taken from the company's own sfsy profile pages
-    // (jieshao_1/jieshao_2, zh+en) so the profile page is populated —
-    // and editable in the admin — from day one.
+    // Default company-profile content, mirroring the Node backend's
+    // DEFAULT_CONFIG: the WILLIS / Meishicai company profile from
+    // williscarpaint.com's About page (Shaoguan Xinyue Chemical Co.,
+    // Ltd, zh+en) so the profile page is populated — and editable in
+    // the admin — from day one.
     private static SiteConfigRequest.ProfileContent defaultProfileContent() {
         SiteConfigRequest.ProfileContent content = new SiteConfigRequest.ProfileContent();
         content.setHeroImages(new ArrayList<>(java.util.List.of(
-                "https://cdn.taojieyph.com/images/20250908/68ad8de345fce8361.jpg",
-                "https://cdn.taojieyph.com/images/20250908/68ad8de345fce8362.jpg",
-                "https://cdn.taojieyph.com/images/20250908/68ad8de345fce8363.jpg",
-                "https://cdn.taojieyph.com/images/20250908/68ad8de345fce8364.jpg",
-                "https://cdn.taojieyph.com/images/20250908/68ad8de345fce8365.jpg")));
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779616076263.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779623142310.png",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779607313419.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779609121611.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779615218098.jpg")));
         content.setSections(new ArrayList<>(java.util.List.of(
                 profileSection(
-                        langMap("公司简介", "Company Introduction"),
-                        langMap("广州三合涂料科技有限公司是一家高新技术企业，专注于汽车漆和工业漆的研发、生产与销售，拥有超过二十年的涂料生产经验。",
-                                "Guangzhou Sanhe Coating Technology Co., Ltd. is a high-tech enterprise, focusing on the research and development, production, and sales of automotive and industrial coatings, with over twenty years of experience in paint production."),
+                        langMap("关于美诗彩", "About Meishicai"),
+                        langMap("公司位于广东省韶关市翁源县（韶关新粤化工有限公司），是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。",
+                                "Nestled in the pleasant surroundings of Shaoguan City — Wengyuan County, Shaoguan, Guangdong Province, China (Shaoguan Xinyue Chemical Co., Ltd) — we are a modern technological enterprise specializing in the R&D, production, sales and import & export trade of automotive coatings and industrial coatings. We boast over 15 years of global export experience."),
                         new ArrayList<>()),
                 profileSection(
-                        langMap("产品系列", "Product Series"),
+                        langMap("产品系列", "Product Lineup"),
+                        langMap("公司主营产品包括清漆、固化剂、稀释剂、1K 与 2K 素色漆、1K 珍珠漆、1K 水晶珍珠漆、1K 银粉漆、原子灰、1K 与 2K 底漆及其他辅料。",
+                                "Our main product lineup includes clear coats, hardeners, thinners, 1K & 2K solid color paints, 1K pearl paints, 1K crystal pearl paints, 1K silver paints, body filler, 1K & 2K primers and other auxiliary materials."),
+                        new ArrayList<>(java.util.List.of(
+                                langMap("清漆", "Clear coat"),
+                                langMap("固化剂", "Hardener"),
+                                langMap("稀释剂", "Thinner"),
+                                langMap("1K 与 2K 素色漆", "1K & 2K solid color paints"),
+                                langMap("1K 珍珠漆与水晶珍珠漆", "1K pearl & crystal pearl paints"),
+                                langMap("1K 银粉漆", "1K silver paints"),
+                                langMap("原子灰", "Body filler"),
+                                langMap("1K 与 2K 底漆", "1K & 2K primers")))),
+                profileSection(
+                        langMap("质量与认证", "Quality & Certifications"),
+                        langMap("公司配备先进的生产设施与可靠的检测体系，并建有完善的售后服务框架，持续保障卓越的产品品质与令人满意的服务。公司已通过 ISO9001 质量管理体系认证与 ISO14001 环境管理体系认证。",
+                                "Equipped with advanced production facilities and reliable testing systems, backed by a comprehensive after-sales service framework, we consistently guarantee premium product quality and satisfactory service. The company has obtained ISO9001 Quality Management System Certification and ISO14001 Environmental Management System Certification."),
+                        new ArrayList<>()),
+                profileSection(
+                        langMap("技术团队与服务", "Technical Team & Support"),
+                        langMap("作为涂料行业的大型专业制造商，公司拥有一支具备 10 年以上行业经验的技术团队。热忱欢迎全球客户浏览官网并随时垂询，我们随时准备为您提供优质服务。",
+                                "As a large-scale professional manufacturer in the coatings industry, we have a technical team with more than 10 years of industry expertise. We warmly welcome customers worldwide to browse our official website and contact us for any inquiries — we are ready to deliver excellent services for you."),
+                        new ArrayList<>(java.util.List.of(
+                                langMap("专业客服一对一咨询，充分了解您的需求", "One-on-one consultation with a professional customer service representative to understand your needs"),
+                                langMap("长达一年的专属一对一技术支持，现场操作问题由技术团队全程跟进", "Dedicated one-on-one technical support for a full year — all on-site operational issues are handled by our technical team")))),
+                profileSection(
+                        langMap("企业概况", "Company Facts"),
                         new LinkedHashMap<>(),
                         new ArrayList<>(java.util.List.of(
-                                langMap("汽车漆", "Automotive Coatings"),
-                                langMap("清漆", "Clear Coats"),
-                                langMap("固化剂", "Hardeners"),
-                                langMap("稀释剂", "Diluents"),
-                                langMap("1K2K色漆辅料", "1K2K Color Coatings Auxiliary")))),
-                profileSection(
-                        langMap("技术研发", "Technology R&D"),
-                        langMap("公司高度重视技术研发，建立了专业的研发及售后团队。我们不断引进先进的生产和检测设备，以确保客户产品的高品质。",
-                                "The company places great emphasis on technology research and development, establishing a professional R&D and after-sales team. We continuously introduce advanced production and testing equipment to ensure the high quality of our customers' products."),
-                        new ArrayList<>()),
-                profileSection(
-                        langMap("产品优势", "Product Advantages"),
-                        new LinkedHashMap<>(),
-                        new ArrayList<>(java.util.List.of(
-                                langMap("质量优良", "High Quality"),
-                                langMap("稳定性好", "Good Stability"),
-                                langMap("附着力强", "Strong Adhesion"),
-                                langMap("遮盖力好", "Good Coverage"),
-                                langMap("耐候性好", "Excellent Weather Resistance"),
-                                langMap("光泽饱满", "Full Gloss")))),
-                profileSection(
-                        langMap("市场地位", "Market Position"),
-                        langMap("广州三合涂料已成为国内领先的涂料生产厂家，产品远销全球30多个国家。",
-                                "Guangzhou Sanhe Coating has become a leading domestic coating manufacturer, with products sold in over 30 countries worldwide."),
-                        new ArrayList<>()),
-                profileSection(
-                        langMap("生产与研发", "Production and R&D"),
-                        langMap("公司重视精湛技术，不断引进先进的涂料生产设备和检测设备。生产包括汽车修补漆、工业漆、机械金属漆等多种高端、质量稳定的涂料。设有研发部门，从原材料检测到生产过程严格控制品质保证。致力于新产品的开发，为客户提供最专业的服务。",
-                                "The company values exquisite technology and continuously introduces advanced coating production and testing equipment. We produce a variety of high-end, stable quality coatings, including automotive touch-up paints, industrial coatings, and machinery metal coatings. We have a dedicated R&D department that strictly controls the quality from raw material testing to the production process to ensure quality assurance. We are committed to the development of new products, providing the most professional services to our customers."),
-                        new ArrayList<>()))));
+                                langMap("主营产品：清漆、稀释剂、固化剂、2K 漆、1K 漆", "Main products: clear coat, thinner, hardener, 2K paint, 1K paint"),
+                                langMap("年营业额：500 万 – 1000 万美元", "Annual revenue: US$5 Million – US$10 Million"),
+                                langMap("地址：广东省韶关市翁源县", "Location: Wengyuan County, Shaoguan, Guangdong Province, China")))))));
+        content.setGallery(new ArrayList<>(java.util.List.of(
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779624434764.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260525/1779699855501.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779609960810.jpg",
+                "https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779612122478.jpg")));
         return content;
     }
 
