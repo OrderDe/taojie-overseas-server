@@ -15,6 +15,7 @@ import com.zbkj.overseas.dao.OverseasProductDao;
 import com.zbkj.overseas.model.OverseasBrand;
 import com.zbkj.overseas.model.OverseasCategory;
 import com.zbkj.overseas.model.OverseasProduct;
+import com.zbkj.overseas.request.ProductNegotiableRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
 import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.ProductSearchRequest;
@@ -208,6 +209,31 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
             boolean ok = update(new LambdaUpdateWrapper<OverseasProduct>()
                     .eq(OverseasProduct::getId, item.getId())
                     .set(OverseasProduct::getSort, item.getSort() == null ? 0 : item.getSort()));
+            if (ok) {
+                updated++;
+            }
+        }
+        return updated;
+    }
+
+    // Batch negotiable toggle: one transaction for the whole batch,
+    // mirroring updateSorts — invalid ids are skipped and only rows
+    // that actually changed are counted.
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateNegotiable(ProductNegotiableRequest request) {
+        if (request == null || request.getIds() == null) {
+            return 0;
+        }
+        boolean negotiable = Boolean.TRUE.equals(request.getNegotiable());
+        int updated = 0;
+        for (Long id : request.getIds()) {
+            if (id == null || id <= 0) {
+                continue;
+            }
+            boolean ok = update(new LambdaUpdateWrapper<OverseasProduct>()
+                    .eq(OverseasProduct::getId, id)
+                    .set(OverseasProduct::getNegotiable, negotiable));
             if (ok) {
                 updated++;
             }

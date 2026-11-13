@@ -3,6 +3,7 @@ package com.zbkj.overseas.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.zbkj.overseas.common.page.CommonPage;
 import com.zbkj.overseas.model.OverseasProduct;
+import com.zbkj.overseas.request.ProductNegotiableRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
 import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.ProductSearchRequest;
@@ -40,6 +41,9 @@ public interface OverseasProductService extends IService<OverseasProduct> {
 
     /** Batch-update sort values in one transaction; returns how many rows changed. */
     int updateSorts(ProductSortRequest request);
+
+    /** Batch-set the negotiable flag in one transaction; returns how many rows changed. */
+    int updateNegotiable(ProductNegotiableRequest request);
 
     /** Create (id == null) or update a product from the admin payload. */
     AdminProductResponse saveForAdmin(ProductSaveRequest request, Long id);

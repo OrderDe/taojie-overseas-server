@@ -2442,6 +2442,31 @@ const server = createServer(async (req, res) => {
       }
       return send(res, 200, { ok: true, updated })
     }
+    // Batch negotiable toggle: the admin list flips the 面议 flag per
+    // row or for a multi-selection; one transaction, same validation
+    // shape as the sort endpoint (ids must be an array, bad ids are
+    // skipped, updated counts the rows actually written).
+    if (path === '/api/admin/products/negotiable' && req.method === 'POST') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const body = await readBody(req)
+      if (!Array.isArray(body.ids)) return send(res, 400, { error: 'ids must be an array of product ids' })
+      const negotiable = body.negotiable ? 1 : 0
+      const upd = db.prepare('UPDATE products SET negotiable = ? WHERE id = ?')
+      let updated = 0
+      db.exec('BEGIN')
+      try {
+        for (const raw of body.ids) {
+          const id = Math.trunc(Number(raw))
+          if (!Number.isFinite(id) || id <= 0) continue
+          if (upd.run(negotiable, id).changes) updated++
+        }
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
+      }
+      return send(res, 200, { ok: true, updated })
+    }
     if (path === '/api/admin/products' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const body = await readBody(req)

@@ -6,6 +6,7 @@ import com.zbkj.overseas.common.result.CommonResultCode;
 import com.zbkj.overseas.request.BrandSaveRequest;
 import com.zbkj.overseas.request.CategorySaveRequest;
 import com.zbkj.overseas.request.CustomPageSaveRequest;
+import com.zbkj.overseas.request.ProductNegotiableRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
 import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.UploadRequest;
@@ -83,6 +84,12 @@ public class OverseasAdminController {
     @PostMapping("/products/sort")
     public CommonResult<Map<String, Object>> sortProducts(@RequestBody ProductSortRequest request) {
         return CommonResult.success(Map.of("ok", true, "updated", productService.updateSorts(request)));
+    }
+
+    @Operation(summary = "管理端：商品批量面议开关（一次事务更新多件商品的面议标志）")
+    @PostMapping("/products/negotiable")
+    public CommonResult<Map<String, Object>> negotiableProducts(@RequestBody ProductNegotiableRequest request) {
+        return CommonResult.success(Map.of("ok", true, "updated", productService.updateNegotiable(request)));
     }
 
     @Operation(summary = "管理端：新建商品")
