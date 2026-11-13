@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_brand (
 
 CREATE TABLE IF NOT EXISTS eb_overseas_product (
     id          BIGINT       NOT NULL AUTO_INCREMENT,
-    source_id   VARCHAR(64)  NOT NULL COMMENT 'tjmall 商品 id（同步 upsert 键）',
+    source_id   VARCHAR(768)  NOT NULL COMMENT 'tjmall 商品 id（同步 upsert 键）',
     category_id VARCHAR(64)  NOT NULL,
     brand_id    VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '品牌 id（eb_overseas_brand.id），空 = 无品牌',
     names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,...}',
@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS eb_overseas_product (
     unit        VARCHAR(64)      NULL,
     moq         INT          NOT NULL DEFAULT 1,
     image       VARCHAR(1024)    NULL,
+    images JSON NULL COMMENT 'Ordered product images',
+    videos JSON NULL COMMENT 'Ordered product videos',
     video       VARCHAR(1024)    NULL COMMENT '商品视频 URL（空 = 无视频）',
     tag         VARCHAR(128)     NULL,
     blurb       JSON             NULL COMMENT '多语言简介（也可存单语言纯文本）',
@@ -73,7 +75,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_rfq (
 
 CREATE TABLE IF NOT EXISTS eb_overseas_site_config (
     config_key   VARCHAR(64)  NOT NULL COMMENT '与 pc-config.json 字段同名',
-    config_value VARCHAR(1024)    NULL,
+    config_value MEDIUMTEXT       NULL,
     update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外站点配置（键值表，同 eb_system_config 模式）';

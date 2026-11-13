@@ -58,6 +58,10 @@ public class OverseasProduct implements Serializable {
     /** Product demo video URL ('' = none); mirrors the Node backend's products.video */
     private String video;
 
+    private String images;
+
+    private String videos;
+
     private String tag;
 
     /** JSON map lang -> description (single-language text allowed for phase 1) */

@@ -662,6 +662,21 @@ function brandName(brandId, lang) {
   return brand ? pickLang(brand.names, lang) : ''
 }
 
+function mediaUrls(value, legacy = '') {
+  const parsed = parseJsonCol(value, null)
+  return Array.isArray(parsed) ? parsed : legacy ? [legacy] : []
+}
+function mediaValues(body, existing = {}) {
+  const result = {}
+  for (const [key, legacy, max] of [['images','image',20],['videos','video',10]]) {
+    const value = body[key] === undefined ? (String(body[legacy] || '') === String(existing[legacy] || '') ? mediaUrls(existing[key],existing[legacy]) : body[legacy] ? [body[legacy]] : []) : body[key]
+    if (!Array.isArray(value) || value.length > max || value.some(url => typeof url !== 'string' || url.length > 1024 || !/^(https?:\/\/[^\s]+|\/uploads\/[^\s]+)$/.test(url))) return '媒体列表无效或超过数量上限'
+    result[key] = JSON.stringify([...new Set(value)])
+    result[legacy] = value[0] || ''
+  }
+  return result
+}
+for (const column of ['images','videos']) { try { db.exec('ALTER TABLE products ADD COLUMN '+column+' TEXT') } catch {} }
 function productOut(row, lang) {
   const cat = db.prepare('SELECT names FROM categories WHERE id = ?').get(row.category_id)
   let specs = {}
@@ -681,6 +696,8 @@ function productOut(row, lang) {
     moq: row.moq,
     image: row.image,
     video: row.video || '',
+    images: mediaUrls(row.images,row.image),
+    videos: mediaUrls(row.videos,row.video),
     tag: row.tag,
     description: row.blurb,
     specs
@@ -1269,6 +1286,8 @@ function adminProductOut(row) {
     moq: row.moq,
     image: row.image,
     video: row.video || '',
+    images: mediaUrls(row.images,row.image),
+    videos: mediaUrls(row.videos,row.video),
     tag: row.tag,
     blurb: row.blurb,
     specs: parseJsonCol(row.specs, {}),
@@ -2109,12 +2128,16 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/admin/products' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
-      const v = productValues(await readBody(req))
+      const body = await readBody(req)
+      const v = productValues(body)
       if (typeof v === 'string') return send(res, 400, { error: v })
+      const media = mediaValues(body)
+      if (typeof media === 'string') return send(res,400,{error:media})
       const info = db.prepare(`INSERT INTO products
         (source_id, category_id, brand_id, names, price, ot_price, negotiable, sales, unit, moq, image, video, tag, blurb, specs, sort, active)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.negotiable, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active)
+      db.prepare('UPDATE products SET images=?,videos=?,image=?,video=? WHERE id=?').run(media.images,media.videos,media.image,media.video,Number(info.lastInsertRowid))
       const row = db.prepare('SELECT * FROM products WHERE id = ?').get(Number(info.lastInsertRowid))
       return send(res, 201, adminProductOut(row))
     }
@@ -2123,11 +2146,16 @@ const server = createServer(async (req, res) => {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const id = Number(adminProductMatch[1])
       if (!db.prepare('SELECT id FROM products WHERE id = ?').get(id)) return send(res, 404, { error: 'product not found' })
-      const v = productValues(await readBody(req))
+      const body = await readBody(req)
+      const v = productValues(body)
       if (typeof v === 'string') return send(res, 400, { error: v })
+      const previous = db.prepare('SELECT * FROM products WHERE id=?').get(id)
+      const media = mediaValues(body,previous)
+      if (typeof media === 'string') return send(res,400,{error:media})
       db.prepare(`UPDATE products SET source_id = ?, category_id = ?, brand_id = ?, names = ?, price = ?, ot_price = ?, negotiable = ?,
         sales = ?, unit = ?, moq = ?, image = ?, video = ?, tag = ?, blurb = ?, specs = ?, sort = ?, active = ? WHERE id = ?`)
         .run(v.sourceId, v.categoryId, v.brandId, v.names, v.price, v.otPrice, v.negotiable, v.sales, v.unit, v.moq, v.image, v.video, v.tag, v.blurb, v.specs, v.sort, v.active, id)
+      db.prepare('UPDATE products SET images=?,videos=?,image=?,video=? WHERE id=?').run(media.images,media.videos,media.image,media.video,id)
       return send(res, 200, adminProductOut(db.prepare('SELECT * FROM products WHERE id = ?').get(id)))
     }
     if (adminProductMatch && req.method === 'DELETE') {

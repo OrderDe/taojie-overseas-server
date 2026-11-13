@@ -59,6 +59,9 @@ public class OverseasAdminController {
     @Value("${overseas.upload-dir:./data/uploads}")
     private String uploadDir;
 
+    @Autowired
+    private com.zbkj.overseas.service.impl.OssMediaStorage ossMediaStorage;
+
     // ---- products ----
 
     @Operation(summary = "管理端：全部商品（含下架）")
@@ -170,6 +173,9 @@ public class OverseasAdminController {
             }
         } else if (bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
             throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "图片为空或超过 6 MB");
+        }
+        if (ossMediaStorage.isEnabled()) {
+            return CommonResult.success(Map.of("url", ossMediaStorage.upload(bytes, ext)));
         }
         String safe = Paths.get(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "-");
         String name = System.currentTimeMillis() + "-" + safe;

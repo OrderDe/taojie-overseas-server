@@ -154,6 +154,8 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setMoq(p.getMoq());
         r.setImage(p.getImage());
         r.setVideo(p.getVideo() == null ? "" : p.getVideo());
+        r.setImages(ProductMedia.read(p.getImages(), p.getImage()));
+        r.setVideos(ProductMedia.read(p.getVideos(), p.getVideo()));
         r.setTag(String.valueOf(content.getOrDefault("tag", p.getTag() == null ? "" : p.getTag())));
         r.setDescription(LangUtil.pick(p.getBlurb(), lang));
         r.setSpecs(content.get("specs") instanceof Map
@@ -216,8 +218,12 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         p.setSales(request.getSales() == null ? 0 : request.getSales());
         p.setUnit(StrUtil.blankToDefault(request.getUnit(), "pc"));
         p.setMoq(request.getMoq() == null ? 0 : request.getMoq());
-        p.setImage(StrUtil.blankToDefault(request.getImage(), ""));
-        p.setVideo(StrUtil.blankToDefault(request.getVideo(), ""));
+        java.util.List<String> images = ProductMedia.save(request.getImages(), p.getImages(), p.getImage(), request.getImage(), 20);
+        java.util.List<String> videos = ProductMedia.save(request.getVideos(), p.getVideos(), p.getVideo(), request.getVideo(), 10);
+        p.setImages(JSONUtil.toJsonStr(images));
+        p.setVideos(JSONUtil.toJsonStr(videos));
+        p.setImage(images.isEmpty() ? "" : images.get(0));
+        p.setVideo(videos.isEmpty() ? "" : videos.get(0));
         p.setTag(StrUtil.blankToDefault(request.getTag(), ""));
         p.setBlurb(LangUtil.withAdminBlurb(p.getBlurb(), request.getBlurb()));
         p.setSpecs(request.getSpecs() == null ? "{}" : JSONUtil.toJsonStr(request.getSpecs()));
@@ -249,6 +255,8 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setMoq(p.getMoq());
         r.setImage(p.getImage());
         r.setVideo(p.getVideo() == null ? "" : p.getVideo());
+        r.setImages(ProductMedia.read(p.getImages(), p.getImage()));
+        r.setVideos(ProductMedia.read(p.getVideos(), p.getVideo()));
         r.setTag(p.getTag());
         r.setBlurb(LangUtil.pick(p.getBlurb(), "en"));
         r.setSpecs(parseSpecs(p.getSpecs()));
