@@ -382,6 +382,11 @@ const DEFAULT_CONFIG = {
   // 'external'; older items without a type are inferred from link upstream.
   navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
   dealerButton: '', hotline: '', storyTitle: '', storyText: '',
+  // Company profile page: when set, the storefront "profile" view embeds
+  // this URL full-page in an iframe (mirrors the original Willis site,
+  // whose profile page embeds the company homepage). Empty = the
+  // storefront falls back to the storyTitle/storyText text version.
+  profileUrl: 'https://williscarpaint.com/',
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
