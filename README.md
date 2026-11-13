@@ -106,6 +106,14 @@ Provider env vars:
 - opt-in fallback: `TRANSLATE_PROVIDER=mymemory` uses the free
   **MyMemory** API instead; set `TRANSLATE_EMAIL` to raise its daily
   quota.
+- per-request override: the request body may carry
+  `provider: "mymemory" | "libre"` to pin the provider for that call
+  only (any other value is a 400); the response echoes the provider
+  actually used as `provider`, and MyMemory calls may add a `meta`
+  object (`responseStatus`, and `quotaFinished` when the source
+  response carried it — MyMemory offers no remaining-quota API, so no
+  quota numbers are ever reported). The admin batch translate uses
+  this to pin MyMemory without changing the server default.
 
 There is no silent provider fallback: a language the self-hosted
 service does not support is reported in `errors` (and left for manual

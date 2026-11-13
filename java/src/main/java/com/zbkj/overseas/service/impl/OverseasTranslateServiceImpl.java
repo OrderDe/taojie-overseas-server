@@ -33,10 +33,14 @@ import java.util.regex.Pattern;
  * LibreTranslate (LIBRETRANSLATE_URL, default http://127.0.0.1:5000 —
  * see docker-compose.yml). The free MyMemory API is kept as an explicit
  * opt-in fallback: TRANSLATE_PROVIDER=mymemory (TRANSLATE_EMAIL raises
- * its daily quota). There is NO silent fallback: a language the
- * self-hosted service does not support lands in `errors` like any other
- * failure. Each language gets a 6s timeout, targets run in parallel,
- * and a single failure lands in `errors`.
+ * its daily quota). A request may override the provider for that call
+ * only via `provider: "mymemory" | "libre"` (any other value is a 400);
+ * the response echoes the provider used, and MyMemory calls may carry
+ * a `meta` map (responseStatus, quotaFinished when the source response
+ * had it). There is NO silent fallback: a language the chosen provider
+ * does not support lands in `errors` like any other failure. Each
+ * language gets a 6s timeout, targets run in parallel, and a single
+ * failure lands in `errors`.
  */
 @Slf4j
 @Service
@@ -61,12 +65,33 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
             .connectTimeout(Duration.ofMillis(TIMEOUT_MS))
             .build();
 
+    /** One language's outcome: the translation plus optional MyMemory meta. */
+    private record OneResult(String text, Map<String, Object> meta) {
+    }
+
+    /**
+     * Provider for one request: an explicit request `provider` wins over
+     * the environment; absent means the env default. An unknown value is
+     * a 400, never a silent default (mirrors the Node implementation).
+     */
+    private String resolveProvider(String requested) {
+        if (StrUtil.isBlank(requested)) {
+            return "mymemory".equalsIgnoreCase(provider) ? "mymemory" : "libre";
+        }
+        String p = requested.trim().toLowerCase();
+        if ("mymemory".equals(p) || "libre".equals(p)) {
+            return p;
+        }
+        throw new OverseasException(400, "provider must be \"mymemory\" or \"libre\"");
+    }
+
     @Override
     public TranslateResponse translate(TranslateRequest request) {
         String text = StrUtil.trim(request.getText());
         if (text.length() > 500) {
             throw new OverseasException(400, "text too long (max 500 chars)");
         }
+        String useProvider = resolveProvider(request.getProvider());
         List<String> requested = new ArrayList<>();
         if (request.getTargets() != null) {
             for (String t : request.getTargets()) {
@@ -92,14 +117,19 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
             throw new OverseasException(502, "translation service unavailable");
         }
 
-        Map<String, CompletableFuture<String>> futures = new LinkedHashMap<>();
+        Map<String, CompletableFuture<OneResult>> futures = new LinkedHashMap<>();
         for (String t : targets) {
-            futures.put(t, CompletableFuture.supplyAsync(() -> translateOne(text, t)));
+            futures.put(t, CompletableFuture.supplyAsync(() -> translateOne(text, t, useProvider)));
         }
         Map<String, String> translations = new LinkedHashMap<>();
-        for (Map.Entry<String, CompletableFuture<String>> e : futures.entrySet()) {
+        Map<String, Object> meta = null;
+        for (Map.Entry<String, CompletableFuture<OneResult>> e : futures.entrySet()) {
             try {
-                translations.put(e.getKey(), e.getValue().join());
+                OneResult r = e.getValue().join();
+                translations.put(e.getKey(), r.text());
+                if (meta == null && r.meta() != null) {
+                    meta = r.meta();
+                }
             } catch (Exception ex) {
                 Throwable cause = ex.getCause() == null ? ex : ex.getCause();
                 errors.put(e.getKey(), String.valueOf(cause.getMessage()));
@@ -111,18 +141,27 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
         TranslateResponse response = new TranslateResponse();
         response.setTranslations(translations);
         response.setErrors(errors);
+        response.setProvider(useProvider);
+        response.setMeta(meta);
         return response;
     }
 
-    private String translateOne(String text, String target) {
-        // Self-hosted LibreTranslate is the default; MyMemory only when asked for.
-        if ("mymemory".equalsIgnoreCase(provider)) {
+    private OneResult translateOne(String text, String target, String useProvider) {
+        if ("mymemory".equals(useProvider)) {
             return translateViaMyMemory(text, target);
         }
         return translateViaLibre(text, target);
     }
 
-    private String translateViaMyMemory(String text, String target) {
+    // Sentences MyMemory puts in the translation slot when something is
+    // wrong (quota exhausted, bad query, ...). responseStatus normally
+    // flags these too, but never let one be stored as a name.
+    private static final Pattern MYMEMORY_WARNING = Pattern.compile(
+            "MYMEMORY WARNING|YOU USED ALL AVAILABLE FREE TRANSLATIONS|QUERY LENGTH LIMIT EXCEEDED"
+                    + "|NO QUERY SPECIFIED|INVALID (TARGET|SOURCE) LANGUAGE|INVALID EMAIL",
+            Pattern.CASE_INSENSITIVE);
+
+    private OneResult translateViaMyMemory(String text, String target) {
         try {
             String pair = URLEncoder.encode("zh-CN|" + target, StandardCharsets.UTF_8);
             String url = "https://api.mymemory.translated.net/get?q="
@@ -136,6 +175,8 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
                     .GET()
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            // Quota exhaustion can also surface as a bare HTTP 429/403
+            // with no usable body — an error, never a translation.
             if (resp.statusCode() != 200) {
                 throw new RuntimeException("mymemory HTTP " + resp.statusCode());
             }
@@ -151,7 +192,23 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
             if (StrUtil.isBlank(out)) {
                 throw new RuntimeException("mymemory: empty result");
             }
-            return decodeHtmlEntities(out).trim();
+            String cleaned = decodeHtmlEntities(out).trim();
+            if (MYMEMORY_WARNING.matcher(cleaned).find()) {
+                throw new RuntimeException("mymemory: " + cleaned);
+            }
+            // Optional passthrough for the admin MyMemory query page:
+            // only fields the source response actually carries, never
+            // invented quota numbers (MyMemory has no quota API).
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("responseStatus", json.getInt("responseStatus", 0));
+            Boolean quotaFinished = json.getBool("quotaFinished", null);
+            if (quotaFinished == null && data != null) {
+                quotaFinished = data.getBool("quotaFinished", null);
+            }
+            if (quotaFinished != null) {
+                meta.put("quotaFinished", quotaFinished);
+            }
+            return new OneResult(cleaned, meta);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -159,7 +216,7 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
         }
     }
 
-    private String translateViaLibre(String text, String target) {
+    private OneResult translateViaLibre(String text, String target) {
         try {
             String base = libreUrl.replaceAll("/+$", "");
             JSONObject payload = JSONUtil.createObj()
@@ -185,7 +242,7 @@ public class OverseasTranslateServiceImpl implements OverseasTranslateService {
             if (StrUtil.isBlank(out)) {
                 throw new RuntimeException("libretranslate: empty result");
             }
-            return decodeHtmlEntities(out).trim();
+            return new OneResult(decodeHtmlEntities(out).trim(), null);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {

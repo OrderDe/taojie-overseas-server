@@ -21,4 +21,7 @@ public class TranslateRequest {
 
     @Schema(description = "目标语种（en/es/fr/pt），为空默认四种全译")
     private List<String> targets;
+
+    @Schema(description = "本次调用的翻译引擎覆盖：mymemory | libre，为空用环境变量默认；非法值 400")
+    private String provider;
 }

@@ -20,4 +20,10 @@ public class TranslateResponse implements Serializable {
     private Map<String, String> translations;
 
     private Map<String, String> errors;
+
+    @Schema(description = "本次实际使用的翻译引擎：mymemory | libre")
+    private String provider;
+
+    @Schema(description = "仅 MyMemory 且源响应带额度字段时出现：responseStatus、quotaFinished（源响应有时才带）")
+    private Map<String, Object> meta;
 }

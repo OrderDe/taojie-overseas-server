@@ -610,8 +610,11 @@ function productValues(body) {
 // default http://127.0.0.1:5000 — see docker-compose.yml). The free
 // MyMemory API is kept as an explicit opt-in fallback:
 // TRANSLATE_PROVIDER=mymemory (set TRANSLATE_EMAIL to raise its quota).
-// There is NO silent fallback: if the self-hosted service does not support
-// a language, that language lands in `errors` like any other failure.
+// A request may override the provider for that call only via
+// `provider: "mymemory" | "libre"` (the admin batch translate pins
+// MyMemory this way); any other value is a 400. There is NO silent
+// fallback: if the chosen provider does not support a language, that
+// language lands in `errors` like any other failure.
 // Supported target languages (source is always zh). Keep in step with the
 // admin language registry (taojie-overseas-admin/src/utils/langs.js).
 const TRANSLATE_TARGETS = ['en', 'es', 'fr', 'pt', 'id', 'ms', 'vi', 'th', 'ar', 'ru', 'de']
@@ -628,11 +631,18 @@ function decodeHtmlEntities(s) {
     .replace(/&amp;/g, '&')
 }
 
+// Sentences MyMemory puts in the translation slot when something is
+// wrong (quota exhausted, bad query, ...). responseStatus normally
+// flags these too, but never let one be stored as a name.
+const MYMEMORY_WARNING_RE = /MYMEMORY WARNING|YOU USED ALL AVAILABLE FREE TRANSLATIONS|QUERY LENGTH LIMIT EXCEEDED|NO QUERY SPECIFIED|INVALID (TARGET|SOURCE) LANGUAGE|INVALID EMAIL/i
+
 async function translateViaMyMemory(text, target) {
   const pair = encodeURIComponent(`zh-CN|${target}`)
   let u = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`
   if (process.env.TRANSLATE_EMAIL) u += `&de=${encodeURIComponent(process.env.TRANSLATE_EMAIL)}`
   const res = await fetch(u, { signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS) })
+  // Quota exhaustion can also surface as a bare HTTP 429/403 with no
+  // usable body — that is an error, never a translation.
   if (!res.ok) throw new Error(`mymemory HTTP ${res.status}`)
   const data = await res.json()
   // On quota exhaustion MyMemory still returns 200-shaped JSON but with
@@ -642,7 +652,16 @@ async function translateViaMyMemory(text, target) {
   }
   const out = data.responseData && data.responseData.translatedText
   if (!out) throw new Error('mymemory: empty result')
-  return decodeHtmlEntities(out).trim()
+  const cleaned = decodeHtmlEntities(out).trim()
+  if (MYMEMORY_WARNING_RE.test(cleaned)) throw new Error(`mymemory: ${cleaned}`)
+  // Optional passthrough for the admin MyMemory query page: only the
+  // fields the source response actually carries, never invented quota
+  // numbers (MyMemory has no remaining-quota API).
+  const meta = { responseStatus: Number(data.responseStatus) }
+  const quotaFinished = data.quotaFinished !== undefined ? data.quotaFinished
+    : (data.responseData && data.responseData.quotaFinished)
+  if (typeof quotaFinished === 'boolean') meta.quotaFinished = quotaFinished
+  return { text: cleaned, meta }
 }
 
 async function translateViaLibre(text, target) {
@@ -659,12 +678,24 @@ async function translateViaLibre(text, target) {
   if (!res.ok) throw new Error(`libretranslate HTTP ${res.status}`)
   const data = await res.json()
   if (!data || !data.translatedText) throw new Error('libretranslate: empty result')
-  return decodeHtmlEntities(data.translatedText).trim()
+  return { text: decodeHtmlEntities(data.translatedText).trim() }
 }
 
-async function translateOne(text, target) {
-  // Self-hosted LibreTranslate is the default; MyMemory only when asked for.
-  if (process.env.TRANSLATE_PROVIDER === 'mymemory') {
+const TRANSLATE_PROVIDERS = ['mymemory', 'libre']
+
+// Provider for one request: an explicit body `provider` wins over the
+// environment; absent means the env default (TRANSLATE_PROVIDER=mymemory,
+// otherwise the self-hosted LibreTranslate). Returns null for a value
+// outside the allowlist — the handler turns that into a 400.
+function resolveTranslateProvider(body) {
+  const raw = body && body.provider !== undefined && body.provider !== null ? String(body.provider).trim() : ''
+  if (!raw) return process.env.TRANSLATE_PROVIDER === 'mymemory' ? 'mymemory' : 'libre'
+  const p = raw.toLowerCase()
+  return TRANSLATE_PROVIDERS.includes(p) ? p : null
+}
+
+async function translateOne(text, target, provider) {
+  if (provider === 'mymemory') {
     return translateViaMyMemory(text, target)
   }
   return translateViaLibre(text, target)
@@ -839,27 +870,38 @@ const server = createServer(async (req, res) => {
       const text = String(body.text || '').trim()
       if (!text) return send(res, 400, { error: 'text is required' })
       if (text.length > 500) return send(res, 400, { error: 'text too long (max 500 chars)' })
+      // Per-request provider override (see resolveTranslateProvider);
+      // an unknown provider is a client error, never a silent default.
+      const provider = resolveTranslateProvider(body)
+      if (!provider) return send(res, 400, { error: 'provider must be "mymemory" or "libre"' })
       const wanted = Array.isArray(body.targets) && body.targets.length ? body.targets : TRANSLATE_TARGETS
       const requested = [...new Set(wanted.map((t) => String(t)).filter(Boolean))]
       const targets = requested.filter((t) => TRANSLATE_TARGETS.includes(t))
       const translations = {}
       const errors = {}
+      let meta
       // Codes outside the supported list are never fetched, just reported.
       for (const t of requested) if (!TRANSLATE_TARGETS.includes(t)) errors[t] = 'unsupported'
       if (!targets.length) {
-        return send(res, 502, { error: 'translation service unavailable', errors })
+        return send(res, 502, { error: 'translation service unavailable', errors, provider })
       }
       await Promise.all(targets.map(async (t) => {
         try {
-          translations[t] = await translateOne(text, t)
+          const r = await translateOne(text, t, provider)
+          translations[t] = r.text
+          if (!meta && r.meta) meta = r.meta
         } catch (e) {
           errors[t] = String((e && e.message) || e)
         }
       }))
       if (!Object.keys(translations).length) {
-        return send(res, 502, { error: 'translation service unavailable', errors })
+        return send(res, 502, { error: 'translation service unavailable', errors, provider })
       }
-      return send(res, 200, { translations, errors })
+      const out = { translations, errors, provider }
+      // meta exists only for MyMemory calls whose source response
+      // carried quota fields (see translateViaMyMemory).
+      if (meta) out.meta = meta
+      return send(res, 200, out)
     }
 
     // FX rates for the admin price calculator. The admin gate above has
