@@ -79,6 +79,21 @@ public class SiteConfigRequest {
     @Schema(description = "品牌故事正文")
     private String storyText;
 
+    @Schema(description = "TikTok 主页链接（空 = 前台不显示图标）")
+    private String tiktok;
+
+    @Schema(description = "Instagram 主页链接")
+    private String instagram;
+
+    @Schema(description = "Facebook 主页链接")
+    private String facebook;
+
+    @Schema(description = "YouTube 频道链接")
+    private String youtube;
+
+    @Schema(description = "微信号（前台点击复制）")
+    private String wechat;
+
     /** One top-navigation entry of the storefront. */
     @Data
     @Schema(name = "NavItem", description = "导航菜单项")

@@ -249,7 +249,11 @@ const DEFAULT_CONFIG = {
   // [{label, link, type?, categoryId?}] — type is 'category' | 'anchor' |
   // 'external'; older items without a type are inferred from link upstream.
   navItems: [], heroEyebrow: '', dealerTitle: '', dealerText: '',
-  dealerButton: '', hotline: '', storyTitle: '', storyText: ''
+  dealerButton: '', hotline: '', storyTitle: '', storyText: '',
+  // Social/contact jump links for the storefront "Start Chat with" panel.
+  // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
+  // whatsapp / email / hotline above are reused by the same panel.
+  tiktok: '', instagram: '', facebook: '', youtube: '', wechat: ''
 }
 function getConfig() {
   const row = db.prepare('SELECT data FROM site_config WHERE id = 1').get()

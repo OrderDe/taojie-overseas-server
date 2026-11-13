@@ -49,6 +49,11 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("hotline", "");
         DEFAULTS.put("storyTitle", "");
         DEFAULTS.put("storyText", "");
+        DEFAULTS.put("tiktok", "");
+        DEFAULTS.put("instagram", "");
+        DEFAULTS.put("facebook", "");
+        DEFAULTS.put("youtube", "");
+        DEFAULTS.put("wechat", "");
     }
 
     @Override
@@ -81,6 +86,11 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("hotline", request.getHotline());
         putIfPresent("storyTitle", request.getStoryTitle());
         putIfPresent("storyText", request.getStoryText());
+        putIfPresent("tiktok", request.getTiktok());
+        putIfPresent("instagram", request.getInstagram());
+        putIfPresent("facebook", request.getFacebook());
+        putIfPresent("youtube", request.getYoutube());
+        putIfPresent("wechat", request.getWechat());
         if (request.getShowRfq() != null) {
             put("showRfq", String.valueOf(request.getShowRfq()));
         }

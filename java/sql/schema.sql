@@ -10,6 +10,7 @@ USE taojie_overseas;
 
 CREATE TABLE IF NOT EXISTS eb_overseas_category (
     id          VARCHAR(64)  NOT NULL COMMENT '分类 id（与前端/种子数据一致，如 clear、paint）',
+    parent_id   VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '父级分类 id，空 = 一级分类（三级分类，见 category-hierarchy.sql）',
     names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,"es":..,"fr":..,"pt":..}',
     sort        INT          NOT NULL DEFAULT 0,
     is_show     TINYINT(1)   NOT NULL DEFAULT 1,
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_product (
     tag         VARCHAR(128)     NULL,
     blurb       JSON             NULL COMMENT '多语言简介（也可存单语言纯文本）',
     specs       JSON             NULL COMMENT '参数 {"Mix ratio":"2 : 1",...}',
+    localized_content JSON       NULL COMMENT 'Localized unit, tag and specs',
     is_show     TINYINT(1)   NOT NULL DEFAULT 1,
     sort        INT          NOT NULL DEFAULT 0,
     create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
