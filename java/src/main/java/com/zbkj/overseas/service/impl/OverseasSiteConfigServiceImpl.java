@@ -60,6 +60,55 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("facebook", "");
         DEFAULTS.put("youtube", "");
         DEFAULTS.put("wechat", "");
+        // Footer content (mirrors the Node backend's defaults, which
+        // reproduce the storefront's previously hardcoded footer).
+        DEFAULTS.put("footerBlurb", langMap(
+                "淘街商城海外 PC 展示站——汽车涂料与日用品，工厂直供。",
+                "Overseas PC showcase for the Taojie mall — automotive coatings and daily goods, direct from the factory."));
+        DEFAULTS.put("footerNote", langMap(
+                "本站仅作展示：购物车与询价只保存在本设备上，不涉及结算与支付。",
+                "Showcase only: the cart and RFQ are stored on this device. No checkout or payment happens here."));
+        DEFAULTS.put("footerCopyright", langMap("© {year} Taojie.", "© {year} Taojie."));
+        DEFAULTS.put("footerColumns", defaultFooterColumns());
+    }
+
+    // Default footer link columns, mirroring the Node backend: the
+    // shopping column's category links carry no categoryId — the
+    // storefront matches them by label against the live category list
+    // and degrades to plain text when nothing matches.
+    private static List<SiteConfigRequest.FooterColumn> defaultFooterColumns() {
+        List<SiteConfigRequest.FooterColumn> columns = new ArrayList<>();
+        columns.add(footerColumn(langMap("购物", "Shop"), java.util.List.of(
+                footerLink(langMap("汽车漆", "Automotive Paint"), "category", "", ""),
+                footerLink(langMap("底漆与清漆", "Primers & Clear Coats"), "category", "", ""),
+                footerLink(langMap("家居生活", "Home & Living"), "category", "", ""),
+                footerLink(langMap("小家电", "Appliances"), "category", "", "")
+        )));
+        columns.add(footerColumn(langMap("买家服务", "Buyers"), java.util.List.of(
+                footerLink(langMap("索取报价", "Request a Quote"), "anchor", "#rfq", ""),
+                footerLink(langMap("经销商计划", "Distributor Program"), "", "", ""),
+                footerLink(langMap("私牌定制", "Private Label"), "", "", ""),
+                footerLink(langMap("样品", "Samples"), "", "", "")
+        )));
+        return columns;
+    }
+
+    private static SiteConfigRequest.FooterColumn footerColumn(
+            Map<String, String> title, List<SiteConfigRequest.FooterLink> links) {
+        SiteConfigRequest.FooterColumn column = new SiteConfigRequest.FooterColumn();
+        column.setTitle(title);
+        column.setLinks(new ArrayList<>(links));
+        return column;
+    }
+
+    private static SiteConfigRequest.FooterLink footerLink(
+            Map<String, String> labels, String type, String link, String categoryId) {
+        SiteConfigRequest.FooterLink item = new SiteConfigRequest.FooterLink();
+        item.setLabels(labels);
+        item.setType(type);
+        item.setLink(link);
+        item.setCategoryId(categoryId);
+        return item;
     }
 
     // Default company-profile content, mirroring the Node backend's
@@ -278,6 +327,43 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         return out;
     }
 
+    // Footer guards, mirroring the Node backend's sanitizeFooterColumns:
+    // columns and links are capped, label maps are bounded lang maps and
+    // the jump type is whitelisted to the nav dispatcher's vocabulary.
+    private static final List<String> FOOTER_LINK_TYPES = List.of("", "category", "anchor", "page", "external");
+
+    private static List<SiteConfigRequest.FooterColumn> sanitizeFooterColumns(List<SiteConfigRequest.FooterColumn> raw) {
+        List<SiteConfigRequest.FooterColumn> out = new ArrayList<>();
+        if (raw == null) {
+            return out;
+        }
+        for (SiteConfigRequest.FooterColumn c : raw) {
+            if (c == null || out.size() >= 4) {
+                continue;
+            }
+            SiteConfigRequest.FooterColumn clean = new SiteConfigRequest.FooterColumn();
+            clean.setTitle(sanitizeLangMap(c.getTitle(), 300));
+            List<SiteConfigRequest.FooterLink> links = new ArrayList<>();
+            if (c.getLinks() != null) {
+                for (SiteConfigRequest.FooterLink l : c.getLinks()) {
+                    if (l == null || links.size() >= 10) {
+                        continue;
+                    }
+                    SiteConfigRequest.FooterLink item = new SiteConfigRequest.FooterLink();
+                    item.setLabels(sanitizeLangMap(l.getLabels(), 300));
+                    String type = l.getType() == null ? "" : l.getType();
+                    item.setType(FOOTER_LINK_TYPES.contains(type) ? type : "");
+                    item.setLink(truncate(l.getLink() == null ? "" : l.getLink().trim(), 1000));
+                    item.setCategoryId(truncate(l.getCategoryId() == null ? "" : l.getCategoryId().trim(), 100));
+                    links.add(item);
+                }
+            }
+            clean.setLinks(links);
+            out.add(clean);
+        }
+        return out;
+    }
+
     private static Map<String, String> sanitizeLangMap(Map<String, String> raw, int maxLen) {
         Map<String, String> out = new LinkedHashMap<>();
         if (raw == null) {
@@ -360,6 +446,19 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if (request.getProfileContent() != null) {
             put("profileContent", JSONUtil.toJsonStr(sanitizeProfileContent(request.getProfileContent())));
         }
+        // Footer fields are stored as JSON strings, like profileContent.
+        if (request.getFooterBlurb() != null) {
+            put("footerBlurb", JSONUtil.toJsonStr(sanitizeLangMap(request.getFooterBlurb(), 1000)));
+        }
+        if (request.getFooterNote() != null) {
+            put("footerNote", JSONUtil.toJsonStr(sanitizeLangMap(request.getFooterNote(), 1000)));
+        }
+        if (request.getFooterCopyright() != null) {
+            put("footerCopyright", JSONUtil.toJsonStr(sanitizeLangMap(request.getFooterCopyright(), 200)));
+        }
+        if (request.getFooterColumns() != null) {
+            put("footerColumns", JSONUtil.toJsonStr(sanitizeFooterColumns(request.getFooterColumns())));
+        }
         putIfPresent("tiktok", request.getTiktok());
         putIfPresent("instagram", request.getInstagram());
         putIfPresent("facebook", request.getFacebook());
@@ -421,6 +520,29 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         }
         if ("profileMode".equals(key)) {
             return "custom".equals(value) ? "custom" : "embed";
+        }
+        if ("footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)) {
+            if (StrUtil.isBlank(value)) {
+                return new LinkedHashMap<>();
+            }
+            try {
+                Map<String, String> parsed = JSONUtil.toBean(value, Map.class);
+                return parsed == null ? new LinkedHashMap<>() : parsed;
+            } catch (Exception e) {
+                return new LinkedHashMap<>();
+            }
+        }
+        if ("footerColumns".equals(key)) {
+            if (StrUtil.isBlank(value)) {
+                return new ArrayList<>();
+            }
+            try {
+                List<SiteConfigRequest.FooterColumn> parsed =
+                        JSONUtil.toList(value, SiteConfigRequest.FooterColumn.class);
+                return parsed == null ? new ArrayList<>() : parsed;
+            } catch (Exception e) {
+                return new ArrayList<>();
+            }
         }
         if ("profileContent".equals(key)) {
             if (StrUtil.isBlank(value)) {

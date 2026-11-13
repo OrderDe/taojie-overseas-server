@@ -589,6 +589,45 @@ const DEFAULT_CONFIG = {
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
   tiktok: '', instagram: '', facebook: '', youtube: '', wechat: '',
+  // Footer content (admin-editable on the 「页脚」 page): the brand
+  // blurb, the note and the copyright line are {lang: text} maps (the
+  // copyright supports a {year} placeholder the storefront replaces
+  // with the current year); footerColumns are link columns whose links
+  // jump like nav items (category / anchor / page / external; '' =
+  // text only). A category link with an empty categoryId is matched
+  // by label against the live category list on the storefront and
+  // degrades to plain text when nothing matches. The PUT handler
+  // shape-guards all four fields (see the sanitize helpers below).
+  // Defaults reproduce the storefront's previously hardcoded footer.
+  footerBlurb: {
+    zh: '淘街商城海外 PC 展示站——汽车涂料与日用品，工厂直供。',
+    en: 'Overseas PC showcase for the Taojie mall — automotive coatings and daily goods, direct from the factory.'
+  },
+  footerNote: {
+    zh: '本站仅作展示：购物车与询价只保存在本设备上，不涉及结算与支付。',
+    en: 'Showcase only: the cart and RFQ are stored on this device. No checkout or payment happens here.'
+  },
+  footerCopyright: { zh: '© {year} Taojie.', en: '© {year} Taojie.' },
+  footerColumns: [
+    {
+      title: { zh: '购物', en: 'Shop' },
+      links: [
+        { labels: { zh: '汽车漆', en: 'Automotive Paint' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '底漆与清漆', en: 'Primers & Clear Coats' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '家居生活', en: 'Home & Living' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '小家电', en: 'Appliances' }, type: 'category', link: '', categoryId: '' }
+      ]
+    },
+    {
+      title: { zh: '买家服务', en: 'Buyers' },
+      links: [
+        { labels: { zh: '索取报价', en: 'Request a Quote' }, type: 'anchor', link: '#rfq', categoryId: '' },
+        { labels: { zh: '经销商计划', en: 'Distributor Program' }, type: '', link: '', categoryId: '' },
+        { labels: { zh: '私牌定制', en: 'Private Label' }, type: '', link: '', categoryId: '' },
+        { labels: { zh: '样品', en: 'Samples' }, type: '', link: '', categoryId: '' }
+      ]
+    }
+  ],
   // Internal: sha256 of the bundled willis catalogue last synced into
   // the products table (see the startup sync above); not admin-edited.
   willisImportHash: ''
@@ -667,6 +706,32 @@ function sanitizeProfileContent(raw) {
       text: sanitizeLangMap(t.text, 1000)
     }))
   return { banner, heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
+}
+
+// ---- Footer content guards ----
+// Same philosophy as the profile content above: the blurb / note /
+// copyright are {lang: text} maps (bounded like section text), and the
+// link columns are capped (4 columns × 10 links) with each link's jump
+// type whitelisted to the nav dispatcher's vocabulary, so a junk or
+// hostile payload cannot smuggle an arbitrary action into the footer.
+const FOOTER_LINK_TYPES = ['', 'category', 'anchor', 'page', 'external']
+function sanitizeFooterColumns(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+    .slice(0, 4)
+    .map((c) => ({
+      title: sanitizeLangMap(c.title, 300),
+      links: (Array.isArray(c.links) ? c.links : [])
+        .filter((l) => l && typeof l === 'object' && !Array.isArray(l))
+        .slice(0, 10)
+        .map((l) => ({
+          labels: sanitizeLangMap(l.labels, 300),
+          type: FOOTER_LINK_TYPES.includes(String(l.type || '')) ? String(l.type || '') : '',
+          link: typeof l.link === 'string' ? l.link.trim().slice(0, 1000) : '',
+          categoryId: typeof l.categoryId === 'string' ? l.categoryId.trim().slice(0, 100) : ''
+        }))
+    }))
 }
 
 // ---- Custom pages (admin-authored standalone pages the nav can point to) ----
@@ -1686,6 +1751,11 @@ const server = createServer(async (req, res) => {
       // falls back to 'embed' — and the custom content is shape-guarded.
       merged.profileMode = merged.profileMode === 'custom' ? 'custom' : 'embed'
       merged.profileContent = sanitizeProfileContent(merged.profileContent)
+      // Footer fields are shape-guarded the same way (see the helpers).
+      merged.footerBlurb = sanitizeLangMap(merged.footerBlurb, 1000)
+      merged.footerNote = sanitizeLangMap(merged.footerNote, 1000)
+      merged.footerCopyright = sanitizeLangMap(merged.footerCopyright, 200)
+      merged.footerColumns = sanitizeFooterColumns(merged.footerColumns)
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)

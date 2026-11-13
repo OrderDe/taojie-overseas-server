@@ -110,6 +110,48 @@ public class SiteConfigRequest {
     @Schema(description = "微信号（前台点击复制）")
     private String wechat;
 
+    @Schema(description = "页脚品牌介绍（多语言 {语言码: 文案}）")
+    private Map<String, String> footerBlurb;
+
+    @Schema(description = "页脚说明（多语言 {语言码: 文案}）")
+    private Map<String, String> footerNote;
+
+    @Schema(description = "页脚版权文案（多语言 {语言码: 文案}，支持 {year} 占位，前台替换为当前年份）")
+    private Map<String, String> footerCopyright;
+
+    @Schema(description = "页脚链接列（最多 4 列、每列最多 10 条链接）")
+    private List<FooterColumn> footerColumns;
+
+    /** One footer link column: a heading plus its links. */
+    @Data
+    @Schema(name = "FooterColumn", description = "页脚链接列")
+    public static class FooterColumn {
+
+        @Schema(description = "列标题（多语言 {语言码: 文案}）")
+        private Map<String, String> title;
+
+        @Schema(description = "链接列表")
+        private List<FooterLink> links = new ArrayList<>();
+    }
+
+    /** One footer link; jumps exactly like a nav item. */
+    @Data
+    @Schema(name = "FooterLink", description = "页脚链接")
+    public static class FooterLink {
+
+        @Schema(description = "链接文字（多语言 {语言码: 文案}）")
+        private Map<String, String> labels;
+
+        @Schema(description = "点击行为：category 跳分类 / anchor 跳页面区块 / page 打开自定义页面 / external 打开外链；空 = 纯文字")
+        private String type;
+
+        @Schema(description = "链接地址（anchor / page / external 时使用）")
+        private String link;
+
+        @Schema(description = "type=category 时的目标分类 id；空 = 前台按名称匹配分类，匹配不到显示为纯文字")
+        private String categoryId;
+    }
+
     /** One top-navigation entry of the storefront. */
     @Data
     @Schema(name = "NavItem", description = "导航菜单项")
