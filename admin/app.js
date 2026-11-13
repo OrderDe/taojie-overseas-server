@@ -61,7 +61,7 @@ async function enterApp() {
 
 // Tabs follow the role's menu permissions: no permission, no tab.
 function applyPermissions() {
-  const tabPerm = { products: 'products', categories: 'categories', rfq: 'rfq', config: 'config', users: 'users' }
+  const tabPerm = { products: 'goods', categories: 'categories', rfq: 'rfq', config: 'site-config', users: 'users' }
   let firstVisible = null
   document.querySelectorAll('.tab').forEach((btn) => {
     const visible = can(tabPerm[btn.dataset.tab])

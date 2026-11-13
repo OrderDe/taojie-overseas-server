@@ -16,6 +16,7 @@ import com.zbkj.overseas.model.OverseasAdminUser;
 import com.zbkj.overseas.request.AdminRoleSaveRequest;
 import com.zbkj.overseas.request.AdminUserSaveRequest;
 import com.zbkj.overseas.request.LoginRequest;
+import com.zbkj.overseas.request.SiteConfigRequest;
 import com.zbkj.overseas.response.AdminPrincipal;
 import com.zbkj.overseas.response.AdminRoleResponse;
 import com.zbkj.overseas.response.AdminUserResponse;
@@ -53,16 +54,60 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         implements OverseasAdminService {
 
     private static final List<PermissionResponse> PERMISSION_DEFS = List.of(
-            new PermissionResponse("products", "商品管理"),
-            new PermissionResponse("categories", "分类管理"),
-            new PermissionResponse("rfq", "询价列表"),
-            new PermissionResponse("chat", "在线聊天"),
-            new PermissionResponse("visitors", "访客统计"),
-            new PermissionResponse("formula", "配方管理"),
-            new PermissionResponse("config", "站点配置"),
-            new PermissionResponse("users", "用户与角色"));
+            new PermissionResponse("goods", "商品管理", "商品"),
+            new PermissionResponse("brands", "品牌管理", "商品"),
+            new PermissionResponse("categories", "分类管理", "商品"),
+            new PermissionResponse("rfq", "询价列表", "客户"),
+            new PermissionResponse("chat", "在线聊天", "客户"),
+            new PermissionResponse("visitors", "访客统计", "客户"),
+            new PermissionResponse("formula-colors", "配方管理", "配方"),
+            new PermissionResponse("color-numbers", "色号与配方", "配方"),
+            new PermissionResponse("masterbatches", "色母库", "配方"),
+            new PermissionResponse("car-brands", "汽车品牌", "配方"),
+            new PermissionResponse("car-models", "车型库", "配方"),
+            new PermissionResponse("formula-dicts", "配方基础数据", "配方"),
+            new PermissionResponse("theme-config", "主题配置", "网站配置"),
+            new PermissionResponse("navigation", "导航管理", "网站配置"),
+            new PermissionResponse("site-config", "站点配置", "网站配置"),
+            new PermissionResponse("profile", "公司简介", "网站配置"),
+            new PermissionResponse("pages", "自定义页面", "网站配置"),
+            new PermissionResponse("footer", "页脚", "网站配置"),
+            new PermissionResponse("users", "用户与角色", "系统"));
     private static final List<String> ALL_PERMS =
             PERMISSION_DEFS.stream().map(PermissionResponse::getKey).collect(Collectors.toList());
+    // Until 2026-11 roles stored three shared keys: 'products' covered
+    // 商品 + 品牌, 'formula' all six formula menus and 'config' all six
+    // site menus. Stored roles still carry those keys, so every read of a
+    // stored permission list expands them into the per-menu keys (the old
+    // key itself is dropped). Saves only ever write new keys.
+    private static final Map<String, List<String>> LEGACY_PERM_EXPANSIONS = Map.of(
+            "products", List.of("goods", "brands"),
+            "formula", List.of("formula-colors", "color-numbers", "masterbatches", "car-brands", "car-models", "formula-dicts"),
+            "config", List.of("theme-config", "navigation", "site-config", "profile", "pages", "footer"));
+    private static final List<String> FORMULA_PERMS = LEGACY_PERM_EXPANSIONS.get("formula");
+    private static final Map<String, String> FORMULA_RESOURCE_PERM = Map.of(
+            "car-colors", "formula-colors",
+            "masterbatches", "masterbatches",
+            "car-brands", "car-brands",
+            "car-models", "car-models",
+            "car-countries", "formula-dicts",
+            "car-factories", "formula-dicts",
+            "color-cards", "formula-dicts",
+            "color-brands", "formula-dicts");
+
+    static List<String> expandPerms(List<String> perms) {
+        List<String> out = new ArrayList<>();
+        if (perms != null) {
+            for (String p : perms) {
+                for (String k : LEGACY_PERM_EXPANSIONS.getOrDefault(p, List.of(p))) {
+                    if (!out.contains(k)) {
+                        out.add(k);
+                    }
+                }
+            }
+        }
+        return out;
+    }
     private static final long SESSION_TTL_MS = 7L * 24 * 3600 * 1000;
     private static final int PBKDF2_ITERATIONS = 120_000;
 
@@ -81,7 +126,10 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
     public void bootstrap() {
         if (roleDao.selectCount(new LambdaQueryWrapper<OverseasAdminRole>()) == 0) {
             insertRole("超级管理员", List.of("*"), true);
-            insertRole("运营", List.of("products", "categories", "rfq", "chat", "config", "visitors", "formula"), false);
+            insertRole("运营", List.of(
+                    "goods", "brands", "categories", "rfq", "chat", "visitors",
+                    "formula-colors", "color-numbers", "masterbatches", "car-brands", "car-models", "formula-dicts",
+                    "theme-config", "navigation", "site-config", "profile", "pages", "footer"), false);
             insertRole("外贸员", List.of("rfq", "chat", "visitors"), false);
         }
         if (count() == 0 && StrUtil.isNotBlank(adminToken)) {
@@ -186,9 +234,11 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
                 || path.equals("/api/admin/permissions")) {
             return "users";
         }
-        if (path.startsWith("/api/admin/products") || path.startsWith("/api/admin/brands")
-                || path.equals("/api/admin/upload")) {
-            return "products";
+        if (path.startsWith("/api/admin/products")) {
+            return "goods";
+        }
+        if (path.startsWith("/api/admin/brands")) {
+            return "brands";
         }
         if (path.startsWith("/api/admin/categories")) {
             return "categories";
@@ -202,14 +252,73 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         if (path.startsWith("/api/admin/visitors")) {
             return "visitors";
         }
-        if (path.startsWith("/api/admin/formula")) {
-            return "formula";
+        if (path.startsWith("/api/admin/formula-numbers")) {
+            return "color-numbers";
         }
+        if (path.startsWith("/api/admin/formula/")) {
+            String resource = path.substring("/api/admin/formula/".length()).split("/")[0];
+            return FORMULA_RESOURCE_PERM.get(resource);
+        }
+        // PUT /api/admin/site-config is shared by five settings pages;
+        // the controller enforces the per-area keys field by field (see
+        // siteConfigSaveDenial), so the gate only requires a login here.
         if (path.equals("/api/admin/site-config")) {
-            return "config";
+            return null;
         }
         if (path.startsWith("/api/admin/pages")) {
-            return "config";
+            return "pages";
+        }
+        return null;
+    }
+
+    @Override
+    public List<String> requiredPermAnyOf(String path) {
+        // Image/video upload serves several editors (products, brands,
+        // theme, site config, profile, custom pages) — any of those keys
+        // is enough.
+        if (path.equals("/api/admin/upload")) {
+            return List.of("goods", "brands", "theme-config", "site-config", "profile", "pages");
+        }
+        return null;
+    }
+
+    @Override
+    public boolean isFormulaGroupKey(String key) {
+        return key != null && FORMULA_PERMS.contains(key);
+    }
+
+    @Override
+    public String siteConfigSaveDenial(SiteConfigRequest request, AdminPrincipal principal) {
+        List<String> perms = principal == null || principal.getPermissions() == null
+                ? List.of() : principal.getPermissions();
+        java.util.function.Predicate<String> has = k -> perms.contains("*") || perms.contains(k);
+        if ((request.getDefaultTheme() != null) && !has.test("theme-config")) {
+            return "theme-config";
+        }
+        if ((request.getNavItems() != null || request.getNavigationConfigured() != null) && !has.test("navigation")) {
+            return "navigation";
+        }
+        if ((request.getProfileUrl() != null || request.getProfileMode() != null || request.getProfileContent() != null)
+                && !has.test("profile")) {
+            return "profile";
+        }
+        if ((request.getFooterBlurb() != null || request.getFooterNote() != null
+                || request.getFooterCopyright() != null || request.getFooterColumns() != null) && !has.test("footer")) {
+            return "footer";
+        }
+        boolean touchesOwn = request.getDefaultLanguage() != null || request.getHeroTitle() != null
+                || request.getHeroSubtitle() != null || request.getAnnouncement() != null
+                || request.getShowRfq() != null || request.getShowCart() != null || request.getShowPrices() != null
+                || request.getShowDealer() != null || request.getShowContact() != null
+                || request.getWhatsapp() != null || request.getEmail() != null || request.getCurrency() != null
+                || request.getBaseCurrency() != null || request.getLogo() != null || request.getHeroEyebrow() != null
+                || request.getDealerTitle() != null || request.getDealerText() != null || request.getDealerButton() != null
+                || request.getHotline() != null || request.getStoryTitle() != null || request.getStoryText() != null
+                || request.getTiktok() != null || request.getInstagram() != null || request.getFacebook() != null
+                || request.getYoutube() != null || request.getWechat() != null || request.getSearchPlaceholder() != null
+                || request.getSalesBtnAction() != null;
+        if (touchesOwn && !has.test("site-config")) {
+            return "site-config";
         }
         return null;
     }
@@ -221,7 +330,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         p.setUsername(user.getUsername());
         p.setDisplayName(user.getDisplayName());
         p.setRoleName(role == null ? "" : role.getName());
-        p.setPermissions(role == null ? List.of() : parsePerms(role.getPermissions()));
+        p.setPermissions(role == null ? List.of() : expandPerms(parsePerms(role.getPermissions())));
         return p;
     }
 
@@ -408,7 +517,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         AdminRoleResponse r = new AdminRoleResponse();
         r.setId(role.getId());
         r.setName(role.getName());
-        r.setPermissions(parsePerms(role.getPermissions()));
+        r.setPermissions(expandPerms(parsePerms(role.getPermissions())));
         r.setBuiltin(role.getBuiltin());
         Long n = count(new LambdaQueryWrapper<OverseasAdminUser>().eq(OverseasAdminUser::getRoleId, role.getId()));
         r.setUserCount(n == null ? 0 : n.intValue());
@@ -417,7 +526,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
 
     private List<String> filterPerms(List<String> requested, String currentJson) {
         if (requested == null) {
-            return parsePerms(currentJson);
+            return expandPerms(parsePerms(currentJson));
         }
         return requested.stream().filter(p -> ALL_PERMS.contains(p) || "*".equals(p)).collect(Collectors.toList());
     }

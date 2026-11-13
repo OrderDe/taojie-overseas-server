@@ -1,13 +1,19 @@
 package com.zbkj.overseas.controller;
 
+import com.zbkj.overseas.common.exception.OverseasException;
 import com.zbkj.overseas.common.result.CommonResult;
+import com.zbkj.overseas.common.result.CommonResultCode;
+import com.zbkj.overseas.interceptor.AdminTokenInterceptor;
 import com.zbkj.overseas.model.OverseasRfq;
 import com.zbkj.overseas.request.SiteConfigRequest;
+import com.zbkj.overseas.response.AdminPrincipal;
+import com.zbkj.overseas.service.OverseasAdminService;
 import com.zbkj.overseas.service.OverseasRfqService;
 import com.zbkj.overseas.service.OverseasSiteConfigService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.security.PermitAll;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +38,9 @@ public class OverseasSiteConfigController {
     @Autowired
     private OverseasRfqService rfqService;
 
+    @Autowired
+    private OverseasAdminService adminService;
+
     @PermitAll
     @Operation(summary = "读取站点配置")
     @GetMapping("/site-config")
@@ -47,7 +56,16 @@ public class OverseasSiteConfigController {
 
     @Operation(summary = "管理端：保存站点配置")
     @PutMapping("/admin/site-config")
-    public CommonResult<Map<String, Object>> adminSaveSiteConfig(@RequestBody SiteConfigRequest request) {
+    public CommonResult<Map<String, Object>> adminSaveSiteConfig(@RequestBody SiteConfigRequest request,
+                                                                 HttpServletRequest httpRequest) {
+        // Five settings pages share this endpoint; each may only save its
+        // own slice of the config (per-menu permission keys).
+        AdminPrincipal principal =
+                (AdminPrincipal) httpRequest.getAttribute(AdminTokenInterceptor.PRINCIPAL_ATTR);
+        String denied = adminService.siteConfigSaveDenial(request, principal);
+        if (denied != null) {
+            throw new OverseasException(CommonResultCode.FORBIDDEN.getCode(), "no permission: " + denied);
+        }
         return CommonResult.success(siteConfigService.updateConfig(request));
     }
 }

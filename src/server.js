@@ -965,19 +965,50 @@ function readBody(req, limit = 1e6) {
 // The shared ADMIN_TOKEN still works as a break-glass root credential. On
 // top of it there are real accounts: POST /api/admin/login checks a
 // username+password and issues a session token; each role carries menu
-// permissions (products / categories / rfq / config / users) which the API
-// enforces per area and the admin UI uses to show/hide tabs.
+// permissions — one key per sidebar menu — which the API enforces per
+// area and the admin UI uses to show/hide tabs.
 const PERMISSIONS = [
-  { key: 'products', label: '商品管理' },
-  { key: 'categories', label: '分类管理' },
-  { key: 'rfq', label: '询价列表' },
-  { key: 'chat', label: '在线聊天' },
-  { key: 'visitors', label: '访客统计' },
-  { key: 'formula', label: '配方管理' },
-  { key: 'config', label: '站点配置' },
-  { key: 'users', label: '用户与角色' }
+  { key: 'goods', label: '商品管理', group: '商品' },
+  { key: 'brands', label: '品牌管理', group: '商品' },
+  { key: 'categories', label: '分类管理', group: '商品' },
+  { key: 'rfq', label: '询价列表', group: '客户' },
+  { key: 'chat', label: '在线聊天', group: '客户' },
+  { key: 'visitors', label: '访客统计', group: '客户' },
+  { key: 'formula-colors', label: '配方管理', group: '配方' },
+  { key: 'color-numbers', label: '色号与配方', group: '配方' },
+  { key: 'masterbatches', label: '色母库', group: '配方' },
+  { key: 'car-brands', label: '汽车品牌', group: '配方' },
+  { key: 'car-models', label: '车型库', group: '配方' },
+  { key: 'formula-dicts', label: '配方基础数据', group: '配方' },
+  { key: 'theme-config', label: '主题配置', group: '网站配置' },
+  { key: 'navigation', label: '导航管理', group: '网站配置' },
+  { key: 'site-config', label: '站点配置', group: '网站配置' },
+  { key: 'profile', label: '公司简介', group: '网站配置' },
+  { key: 'pages', label: '自定义页面', group: '网站配置' },
+  { key: 'footer', label: '页脚', group: '网站配置' },
+  { key: 'users', label: '用户与角色', group: '系统' }
 ]
 const ALL_PERMS = PERMISSIONS.map((p) => p.key)
+// Until 2026-11 roles stored three shared keys: 'products' covered 商品 +
+// 品牌, 'formula' covered all six formula menus and 'config' covered all
+// six site menus. Roles saved back then still carry those keys, so every
+// read of a stored permission list expands them into the per-menu keys
+// below (the old key itself is dropped). Saves only ever write new keys —
+// the role-save filter below keeps ALL_PERMS + '*' and nothing else.
+const LEGACY_PERM_EXPANSIONS = {
+  products: ['goods', 'brands'],
+  formula: ['formula-colors', 'color-numbers', 'masterbatches', 'car-brands', 'car-models', 'formula-dicts'],
+  config: ['theme-config', 'navigation', 'site-config', 'profile', 'pages', 'footer']
+}
+function expandPerms(perms) {
+  const out = []
+  for (const p of Array.isArray(perms) ? perms : []) {
+    for (const k of LEGACY_PERM_EXPANSIONS[p] || [p]) {
+      if (!out.includes(k)) out.push(k)
+    }
+  }
+  return out
+}
 const SESSION_TTL = 7 * 24 * 3600 * 1000
 
 function hashPassword(password) {
@@ -998,7 +1029,11 @@ function seedAdminAccounts() {
   if (n === 0) {
     const ins = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, ?)')
     ins.run('超级管理员', JSON.stringify(['*']), 1)
-    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config', 'visitors', 'formula']), 0)
+    ins.run('运营', JSON.stringify([
+      'goods', 'brands', 'categories', 'rfq', 'chat', 'visitors',
+      'formula-colors', 'color-numbers', 'masterbatches', 'car-brands', 'car-models', 'formula-dicts',
+      'theme-config', 'navigation', 'site-config', 'profile', 'pages', 'footer'
+    ]), 0)
     ins.run('外贸员', JSON.stringify(['rfq', 'chat', 'visitors']), 0)
   }
   const { n: userCount } = db.prepare('SELECT COUNT(*) AS n FROM admin_users').get()
@@ -1039,7 +1074,7 @@ function resolveAuth(req) {
   return {
     userId: user.id, username: user.username, displayName: user.display_name,
     roleName: role ? role.name : '',
-    permissions: role ? parseJsonCol(role.permissions, []) : []
+    permissions: role ? expandPerms(parseJsonCol(role.permissions, [])) : []
   }
 }
 
@@ -1047,19 +1082,60 @@ function isAdmin(req) {
   return resolveAuth(req) !== null
 }
 
-// Which permission a path needs (undefined = public login, null = any account).
+// Which permission a path needs: undefined = public login, null = any
+// account, a string = that menu key, an array = any one of those keys.
+const FORMULA_RESOURCE_PERM = {
+  'car-colors': 'formula-colors',
+  masterbatches: 'masterbatches',
+  'car-brands': 'car-brands',
+  'car-models': 'car-models',
+  'car-countries': 'formula-dicts',
+  'car-factories': 'formula-dicts',
+  'color-cards': 'formula-dicts',
+  'color-brands': 'formula-dicts'
+}
+const FORMULA_PERMS = ['formula-colors', 'color-numbers', 'masterbatches', 'car-brands', 'car-models', 'formula-dicts']
 function requiredPerm(path) {
   if (path === '/api/admin/login') return undefined
   if (path === '/api/admin/me' || path === '/api/admin/logout' || path === '/api/admin/fx/rates') return null
   if (path.startsWith('/api/admin/users') || path.startsWith('/api/admin/roles') || path === '/api/admin/permissions') return 'users'
-  if (path.startsWith('/api/admin/products') || path.startsWith('/api/admin/brands') || path === '/api/admin/upload') return 'products'
+  if (path.startsWith('/api/admin/products')) return 'goods'
+  if (path.startsWith('/api/admin/brands')) return 'brands'
+  // Image/video upload serves several editors (products, brands, theme,
+  // site config, profile, custom pages) — any of those keys is enough.
+  if (path === '/api/admin/upload') return ['goods', 'brands', 'theme-config', 'site-config', 'profile', 'pages']
   if (path.startsWith('/api/admin/categories')) return 'categories'
   if (path === '/api/admin/rfq') return 'rfq'
   if (path.startsWith('/api/admin/chat')) return 'chat'
   if (path.startsWith('/api/admin/visitors')) return 'visitors'
-  if (path.startsWith('/api/admin/formula')) return 'formula'
-  if (path === '/api/admin/site-config') return 'config'
-  if (path.startsWith('/api/admin/pages')) return 'config'
+  if (path.startsWith('/api/admin/formula-numbers')) return 'color-numbers'
+  const formulaMatch = path.match(/^\/api\/admin\/formula\/([a-z-]+)/)
+  if (formulaMatch) return FORMULA_RESOURCE_PERM[formulaMatch[1]] || null
+  // PUT /api/admin/site-config is shared by five settings pages; the
+  // handler enforces the per-area keys field by field (see
+  // SITE_CONFIG_FIELD_GROUPS), so the gate only requires a login here.
+  if (path === '/api/admin/site-config') return null
+  if (path.startsWith('/api/admin/pages')) return 'pages'
+  return null
+}
+
+// PUT /api/admin/site-config field groups: five settings pages share the
+// one endpoint, each owning a slice of the config object. A save may only
+// touch the slices whose menu key the caller holds; any config key not
+// listed here belongs to the 站点配置 page ('site-config').
+const SITE_CONFIG_FIELD_GROUPS = [
+  { perm: 'theme-config', keys: ['defaultTheme'] },
+  { perm: 'navigation', keys: ['navItems', 'navigationConfigured'] },
+  { perm: 'profile', keys: ['profileUrl', 'profileMode', 'profileContent'] },
+  { perm: 'footer', keys: ['footerBlurb', 'footerNote', 'footerCopyright', 'footerColumns'] }
+]
+function siteConfigSaveDenial(body, perms) {
+  const grouped = new Set(SITE_CONFIG_FIELD_GROUPS.flatMap((g) => g.keys))
+  for (const g of SITE_CONFIG_FIELD_GROUPS) {
+    if (g.keys.some((k) => body[k] !== undefined) && !hasPerm(perms, g.perm)) return g.perm
+  }
+  const touchesOwn = Object.keys(DEFAULT_CONFIG).some((k) => !grouped.has(k) && body[k] !== undefined)
+  if (touchesOwn && !hasPerm(perms, 'site-config')) return 'site-config'
   return null
 }
 
@@ -1069,7 +1145,7 @@ function adminUserOut(u) {
 }
 function adminRoleOut(r) {
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM admin_users WHERE role_id = ?').get(r.id)
-  return { id: r.id, name: r.name, permissions: parseJsonCol(r.permissions, []), builtin: r.builtin === 1, userCount: n }
+  return { id: r.id, name: r.name, permissions: expandPerms(parseJsonCol(r.permissions, [])), builtin: r.builtin === 1, userCount: n }
 }
 
 // Simple per-IP rate limit for POST /api/rfq: 5 per minute.
@@ -1751,10 +1827,22 @@ const server = createServer(async (req, res) => {
       const auth = resolveAuth(req)
       if (!auth) return send(res, 401, { error: 'login required' })
       const need = requiredPerm(path)
-      // Product editors need the category list to fill the category dropdown.
-      const categoryReadByProduct = need === 'categories' && req.method === 'GET' && hasPerm(auth.permissions, 'products')
-      if (need && !categoryReadByProduct && !hasPerm(auth.permissions, need)) {
-        return send(res, 403, { error: `no permission: ${need}` })
+      // Read-only cross-menu exceptions (dropdown / lookup data other
+      // editors legitimately read; writes always need the owning key):
+      //  - the category list feeds the product editor's dropdown and the
+      //    navigation / footer link pickers;
+      //  - the custom-page list feeds the navigation / footer link pickers;
+      //  - formula pages read each other's tables for selects, so any
+      //    formula key may read any formula resource.
+      const crossRead = req.method === 'GET' && (
+        (need === 'categories' && ['goods', 'navigation', 'footer'].some((k) => hasPerm(auth.permissions, k)))
+        || (need === 'pages' && ['navigation', 'footer'].some((k) => hasPerm(auth.permissions, k)))
+        || (FORMULA_PERMS.includes(need) && FORMULA_PERMS.some((k) => hasPerm(auth.permissions, k)))
+      )
+      const granted = need == null || crossRead
+        || (Array.isArray(need) ? need.some((k) => hasPerm(auth.permissions, k)) : hasPerm(auth.permissions, need))
+      if (!granted) {
+        return send(res, 403, { error: `no permission: ${Array.isArray(need) ? need.join('/') : need}` })
       }
       req.adminAuth = auth
     }
@@ -1837,6 +1925,10 @@ const server = createServer(async (req, res) => {
     if (req.method === 'PUT' && path === '/api/admin/site-config') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const body = await readBody(req)
+      // Five settings pages share this endpoint; each may only save its
+      // own slice (see SITE_CONFIG_FIELD_GROUPS).
+      const denied = siteConfigSaveDenial(body, req.adminAuth ? req.adminAuth.permissions : ['*'])
+      if (denied) return send(res, 403, { error: `no permission: ${denied}` })
       const merged = { ...getConfig() }
       for (const k of Object.keys(DEFAULT_CONFIG)) if (body[k] !== undefined) merged[k] = body[k]
       // navItems must stay an array of {label, link, type?, categoryId?};
@@ -2312,7 +2404,7 @@ const server = createServer(async (req, res) => {
       })
     }
 
-    // ---- Admin: paint formula library CRUD (perm: formula) ----
+    // ---- Admin: paint formula library CRUD (per-resource menu keys, see FORMULA_RESOURCE_PERM) ----
     const formulaCrudMatch = path.match(/^\/api\/admin\/formula\/([a-z-]+)(?:\/(\d+))?$/)
     if (formulaCrudMatch && FORMULA_CRUD[formulaCrudMatch[1]]) {
       const cfg = FORMULA_CRUD[formulaCrudMatch[1]]
@@ -2646,7 +2738,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { ok: true })
     }
 
-    // ---- Admin: custom page management (perm: config) ----
+    // ---- Admin: custom page management (perm: pages) ----
     if (path === '/api/admin/pages' && req.method === 'GET') {
       const rows = db.prepare('SELECT * FROM custom_pages ORDER BY sort, id').all()
       return send(res, 200, rows.map(customPageOut))
@@ -2738,7 +2830,7 @@ const server = createServer(async (req, res) => {
         token,
         user: {
           username: user.username, displayName: user.display_name,
-          roleName: role ? role.name : '', permissions: role ? parseJsonCol(role.permissions, []) : []
+          roleName: role ? role.name : '', permissions: role ? expandPerms(parseJsonCol(role.permissions, [])) : []
         }
       })
     }
@@ -2834,7 +2926,7 @@ const server = createServer(async (req, res) => {
       // The built-in super-admin role always keeps full permissions.
       const perms = role.builtin === 1
         ? ['*']
-        : (Array.isArray(body.permissions) ? body.permissions.filter((p) => ALL_PERMS.includes(p) || p === '*') : parseJsonCol(role.permissions, []))
+        : (Array.isArray(body.permissions) ? body.permissions.filter((p) => ALL_PERMS.includes(p) || p === '*') : expandPerms(parseJsonCol(role.permissions, [])))
       db.prepare('UPDATE admin_roles SET name = ?, permissions = ? WHERE id = ?').run(name, JSON.stringify(perms), id)
       return send(res, 200, adminRoleOut(db.prepare('SELECT * FROM admin_roles WHERE id = ?').get(id)))
     }
