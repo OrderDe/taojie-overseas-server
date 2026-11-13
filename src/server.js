@@ -13,6 +13,9 @@
 //   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
 //   POST /api/chat/ping                (visitor heartbeat: online + current page)
 //   POST /api/chat/typing              (visitor is typing)
+//   POST /api/track                    (visitor statistics beacon: view/click/heartbeat)
+//   GET  /api/admin/visitors           (visitor stats: summary/countries/trend/list; perm visitors)
+//   GET  /api/admin/visitors/:token/events  (one visitor's view+click timeline)
 //   GET  /api/admin/chat/sessions?keyword=  (chat sessions + unread + profile)
 //   GET|POST /api/admin/chat/sessions/:id/messages  (read thread / reply)
 //   POST /api/admin/chat/sessions/:id/typing        (agent is typing)
@@ -159,6 +162,35 @@ db.exec(`
     body TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS visitors (
+    token TEXT NOT NULL UNIQUE,
+    ip TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    browser TEXT NOT NULL DEFAULT '',
+    os TEXT NOT NULL DEFAULT '',
+    is_bot INTEGER NOT NULL DEFAULT 0,
+    referrer TEXT NOT NULL DEFAULT '',
+    first_page TEXT NOT NULL DEFAULT '',
+    current_page TEXT NOT NULL DEFAULT '',
+    page_views INTEGER NOT NULL DEFAULT 0,
+    visits INTEGER NOT NULL DEFAULT 0,
+    first_seen TEXT NOT NULL DEFAULT '',
+    last_seen TEXT NOT NULL DEFAULT '',
+    visit_started_at TEXT NOT NULL DEFAULT '',
+    dwell_sec INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS visit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'view',
+    page TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT ''
+  );
 `)
 // Products gained a sort column after the first release; add it in place.
 try { db.exec('ALTER TABLE products ADD COLUMN sort INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
@@ -295,6 +327,7 @@ const PERMISSIONS = [
   { key: 'categories', label: '分类管理' },
   { key: 'rfq', label: '询价列表' },
   { key: 'chat', label: '在线聊天' },
+  { key: 'visitors', label: '访客统计' },
   { key: 'config', label: '站点配置' },
   { key: 'users', label: '用户与角色' }
 ]
@@ -319,8 +352,8 @@ function seedAdminAccounts() {
   if (n === 0) {
     const ins = db.prepare('INSERT INTO admin_roles (name, permissions, builtin) VALUES (?, ?, ?)')
     ins.run('超级管理员', JSON.stringify(['*']), 1)
-    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config']), 0)
-    ins.run('外贸员', JSON.stringify(['rfq', 'chat']), 0)
+    ins.run('运营', JSON.stringify(['products', 'categories', 'rfq', 'chat', 'config', 'visitors']), 0)
+    ins.run('外贸员', JSON.stringify(['rfq', 'chat', 'visitors']), 0)
   }
   const { n: userCount } = db.prepare('SELECT COUNT(*) AS n FROM admin_users').get()
   if (userCount === 0 && ADMIN_TOKEN) {
@@ -377,6 +410,7 @@ function requiredPerm(path) {
   if (path.startsWith('/api/admin/categories')) return 'categories'
   if (path === '/api/admin/rfq') return 'rfq'
   if (path.startsWith('/api/admin/chat')) return 'chat'
+  if (path.startsWith('/api/admin/visitors')) return 'visitors'
   if (path === '/api/admin/site-config') return 'config'
   return null
 }
@@ -490,6 +524,108 @@ function lookupChatGeo(sessionId, ip) {
     })
     .catch(() => { /* geo is best-effort only */ })
     .finally(() => clearTimeout(t))
+}
+
+// ---- Visitor statistics (site-wide tracking, separate from chat) ----
+// The storefront beacon (utils/track.js) reports every visitor, not only
+// the ones who open the chat widget. One row per visitor token in
+// `visitors`, plus one row per view/click in `visit_events` (PV/UV and
+// the 7-day trend are computed from view events only — clicks never
+// count as page views).
+//
+// Definitions (also what the admin page shows):
+// - a "visit" is a run of activity with no gap over 30 minutes; a longer
+//   gap starts a new visit (visits + 1, visit_started_at reset).
+// - dwell time accrues on every view/heartbeat/click by the gap since
+//   last_seen, capped at 90s per step so an idle or backgrounded tab
+//   cannot inflate it; the first sighting and a new visit add nothing.
+// - "online" = last_seen within 60 seconds.
+// - "today" = the server's local calendar day (boundaries computed in
+//   local time below, stored timestamps are ISO/UTC strings).
+const VISIT_GAP_MS = 30 * 60 * 1000
+const DWELL_CAP_SEC = 90
+const ONLINE_MS = 60 * 1000
+const trackHits = new Map()
+const TRACK_TOKEN_RE = /^[A-Za-z0-9_-]{8,128}$/
+
+function visitorByToken(token) {
+  if (!token) return undefined
+  return db.prepare('SELECT * FROM visitors WHERE token = ?').get(token)
+}
+
+// Apply the dwell/visit bookkeeping for an activity stamp on an existing
+// visitor row. Returns the fields to persist.
+function accrueVisit(row, nowMs) {
+  const lastMs = Date.parse(row.last_seen || '') || 0
+  let { visits, dwell_sec: dwellSec } = row
+  let visitStarted = row.visit_started_at || row.first_seen || new Date(nowMs).toISOString()
+  if (!lastMs || nowMs - lastMs > VISIT_GAP_MS) {
+    visits = (visits || 0) + 1
+    visitStarted = new Date(nowMs).toISOString()
+  } else {
+    dwellSec = (dwellSec || 0) + Math.min(DWELL_CAP_SEC, Math.max(0, Math.floor((nowMs - lastMs) / 1000)))
+  }
+  return { visits, dwellSec, visitStarted }
+}
+
+function visitorOut(v) {
+  const now = Date.now()
+  const lastMs = Date.parse(v.last_seen || '') || 0
+  const online = !!lastMs && now - lastMs < ONLINE_MS
+  const startedMs = Date.parse(v.visit_started_at || '') || lastMs
+  // Current-visit dwell: live visitors count up to "now" when the admin
+  // page refreshes; offline visitors stop at their last_seen.
+  const currentDwellSec = Math.max(0, Math.floor(((online ? now : lastMs) - startedMs) / 1000))
+  return {
+    token: v.token, ip: v.ip || '', country: v.country || '', region: v.region || '',
+    city: v.city || '', timezone: v.timezone || '', device: v.device || '',
+    browser: v.browser || '', os: v.os || '', suspectBot: v.is_bot === 1,
+    referrer: v.referrer || '', firstPage: v.first_page || '', currentPage: v.current_page || '',
+    pageViews: v.page_views || 0, visits: v.visits || 0,
+    firstSeen: v.first_seen || '', lastSeen: v.last_seen || '', online,
+    visitStartedAt: v.visit_started_at || '', dwellSec: v.dwell_sec || 0, currentDwellSec
+  }
+}
+
+// Geo for a tracking visitor: reuse the region already resolved for the
+// same IP (another visitor row, or a chat session) before ever calling
+// ip-api; only a cache miss goes to the network, fire-and-forget like
+// the chat lookup so tracking never waits on it.
+function resolveVisitorGeo(token, ip) {
+  if (!ip || isPrivateIp(ip)) return
+  const cached = db.prepare("SELECT country, region, city, timezone FROM visitors WHERE ip = ? AND country != '' AND token != ? LIMIT 1").get(ip, token)
+    || db.prepare("SELECT country, region, city, timezone FROM chat_sessions WHERE ip = ? AND country != '' AND country != '本地/内网' LIMIT 1").get(ip)
+  if (cached) {
+    db.prepare('UPDATE visitors SET country = ?, region = ?, city = ?, timezone = ? WHERE token = ?')
+      .run(cached.country, cached.region, cached.city, cached.timezone, token)
+    return
+  }
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 2500)
+  fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,regionName,city,timezone`, { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then((g) => {
+      if (g && g.status === 'success') {
+        db.prepare('UPDATE visitors SET country = ?, region = ?, city = ?, timezone = ? WHERE token = ?')
+          .run(String(g.country || ''), String(g.regionName || ''), String(g.city || ''), String(g.timezone || ''), token)
+      }
+    })
+    .catch(() => { /* geo is best-effort only */ })
+    .finally(() => clearTimeout(t))
+}
+
+// Local-day ISO boundaries for the "today" aggregates.
+function localDayStartIso(offsetDays = 0) {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + offsetDays)
+  return d.toISOString()
+}
+function localDateKey(offsetDays = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 // Presence: a heartbeat (or message) within 45s counts as online; a typing
@@ -1032,6 +1168,105 @@ const server = createServer(async (req, res) => {
       const nowIso = new Date().toISOString()
       db.prepare('UPDATE chat_sessions SET visitor_typing_at = ?, last_seen_at = ? WHERE id = ?').run(nowIso, nowIso, session.id)
       return send(res, 200, { ok: true })
+    }
+
+    // ---- Visitor statistics: storefront beacon ----
+    // type=view (default) counts a page view; type=click records what
+    // the visitor clicked without counting a view; type=heartbeat only
+    // keeps presence/dwell warm. Rate limit: 120/min per IP (a page
+    // view + 30s heartbeats stay far below it); over the limit gets a
+    // plain 429, same style as the chat endpoints.
+    if (req.method === 'POST' && path === '/api/track') {
+      const body = await readBody(req)
+      const ip = clientIpOf(req)
+      if (!hitAllowed(trackHits, ip, 120)) return send(res, 429, { error: 'too many requests, try again later' })
+      const type = ['view', 'heartbeat', 'click'].includes(String(body.type || '')) ? String(body.type) : 'view'
+      let token = String(body.token || '').trim()
+      if (!TRACK_TOKEN_RE.test(token)) token = randomBytes(24).toString('hex')
+      const page = String(body.page || '').trim().slice(0, 300)
+      const action = String(body.action || '').trim().slice(0, 200)
+      const nowMs = Date.now()
+      const nowIso = new Date(nowMs).toISOString()
+      const existing = visitorByToken(token)
+      if (!existing) {
+        const ua = parseUserAgent(req.headers['user-agent'])
+        const local = isPrivateIp(ip)
+        db.prepare(`INSERT INTO visitors
+          (token, ip, country, device, browser, os, is_bot, referrer, first_page, current_page,
+           page_views, visits, first_seen, last_seen, visit_started_at, dwell_sec)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)`)
+          .run(token, ip, local ? '本地/内网' : '', ua.device, ua.browser, ua.os, ua.suspectBot ? 1 : 0,
+            String(body.referrer || '').trim().slice(0, 500), page, page,
+            type === 'view' ? 1 : 0, nowIso, nowIso, nowIso)
+        if (type === 'view') {
+          db.prepare('INSERT INTO visit_events (token, kind, page, action, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(token, 'view', page, '', nowIso)
+        } else if (type === 'click') {
+          db.prepare('INSERT INTO visit_events (token, kind, page, action, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(token, 'click', page, action, nowIso)
+        }
+        if (!local) resolveVisitorGeo(token, ip)
+        return send(res, 200, { ok: true, token })
+      }
+      const acc = accrueVisit(existing, nowMs)
+      const ua = parseUserAgent(req.headers['user-agent'])
+      const ipChanged = ip && ip !== existing.ip
+      db.prepare(`UPDATE visitors SET ip = ?, device = ?, browser = ?, os = ?, is_bot = ?,
+          referrer = CASE WHEN referrer = '' THEN ? ELSE referrer END,
+          current_page = ?, last_seen = ?, visits = ?, dwell_sec = ?, visit_started_at = ?
+          ${type === 'view' ? ', page_views = page_views + 1' : ''}
+          WHERE token = ?`)
+        .run(ip || existing.ip, ua.device, ua.browser, ua.os, ua.suspectBot ? 1 : 0,
+          String(body.referrer || '').trim().slice(0, 500),
+          page || existing.current_page, nowIso, acc.visits, acc.dwellSec, acc.visitStarted, token)
+      if (type === 'view') {
+        db.prepare('INSERT INTO visit_events (token, kind, page, action, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(token, 'view', page, '', nowIso)
+      } else if (type === 'click') {
+        db.prepare('INSERT INTO visit_events (token, kind, page, action, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(token, 'click', page || existing.current_page, action, nowIso)
+      }
+      if (ipChanged || !existing.country) resolveVisitorGeo(token, ip || existing.ip)
+      return send(res, 200, { ok: true, token })
+    }
+
+    // ---- Admin: visitor statistics ----
+    if (req.method === 'GET' && path === '/api/admin/visitors') {
+      const nowMs = Date.now()
+      const onlineSince = new Date(nowMs - ONLINE_MS).toISOString()
+      const { n: online } = db.prepare('SELECT COUNT(*) AS n FROM visitors WHERE last_seen >= ?').get(onlineSince)
+      const todayStart = localDayStartIso(0)
+      const tomorrowStart = localDayStartIso(1)
+      const today = db.prepare("SELECT COUNT(*) AS pv, COUNT(DISTINCT token) AS uv FROM visit_events WHERE kind = 'view' AND created_at >= ? AND created_at < ?")
+        .get(todayStart, tomorrowStart)
+      const { n: totalUv } = db.prepare('SELECT COUNT(*) AS n FROM visitors').get()
+      const { pv: totalPv } = db.prepare('SELECT COALESCE(SUM(page_views), 0) AS pv FROM visitors').get()
+      const countries = db.prepare(`SELECT CASE WHEN country = '' THEN '未知' ELSE country END AS country,
+          COUNT(*) AS visitors FROM visitors GROUP BY country ORDER BY visitors DESC LIMIT 15`).all()
+      const trend = []
+      for (let back = 6; back >= 0; back--) {
+        const row = db.prepare("SELECT COUNT(*) AS pv, COUNT(DISTINCT token) AS uv FROM visit_events WHERE kind = 'view' AND created_at >= ? AND created_at < ?")
+          .get(localDayStartIso(-back), localDayStartIso(-back + 1))
+        trend.push({ date: localDateKey(-back), uv: row.uv, pv: row.pv })
+      }
+      const rows = db.prepare('SELECT * FROM visitors ORDER BY last_seen DESC LIMIT 100').all()
+      return send(res, 200, {
+        summary: { online, todayUv: today.uv, todayPv: today.pv, totalUv, totalPv },
+        countries, trend, visitors: rows.map(visitorOut)
+      })
+    }
+
+    // One visitor's timeline (views + clicks, newest first) for the
+    // admin detail drawer.
+    const visitorEventsMatch = path.match(/^\/api\/admin\/visitors\/([^/]+)\/events$/)
+    if (req.method === 'GET' && visitorEventsMatch) {
+      const token = decodeURIComponent(visitorEventsMatch[1])
+      if (!visitorByToken(token)) return send(res, 404, { error: 'visitor not found' })
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 50)))
+      const rows = db.prepare('SELECT * FROM visit_events WHERE token = ? ORDER BY id DESC LIMIT ?').all(token, limit)
+      return send(res, 200, rows.map((e) => ({
+        id: e.id, kind: e.kind, page: e.page || '', action: e.action || '', createdAt: e.created_at
+      })))
     }
 
     // ---- Admin: online chat (list sessions, read a thread, reply) ----

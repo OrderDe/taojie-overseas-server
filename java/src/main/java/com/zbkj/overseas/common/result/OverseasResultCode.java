@@ -13,7 +13,8 @@ public enum OverseasResultCode implements IResultEnum {
     ADMIN_TOKEN_INVALID(6003, "管理口令无效"),
     RATE_LIMITED(6004, "提交过于频繁，请稍后再试"),
     CHAT_SESSION_INVALID(6005, "聊天会话不存在或已失效"),
-    CHAT_MESSAGE_EMPTY(6006, "消息内容不能为空");
+    CHAT_MESSAGE_EMPTY(6006, "消息内容不能为空"),
+    VISITOR_NOT_FOUND(6007, "访客不存在");
 
     private final Integer code;
     private final String message;

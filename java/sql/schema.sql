@@ -10,7 +10,6 @@ USE taojie_overseas;
 
 CREATE TABLE IF NOT EXISTS eb_overseas_category (
     id          VARCHAR(64)  NOT NULL COMMENT '分类 id（与前端/种子数据一致，如 clear、paint）',
-    parent_id   VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上级分类 ID，空字符串为一级',
     names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,"es":..,"fr":..,"pt":..}',
     sort        INT          NOT NULL DEFAULT 0,
     is_show     TINYINT(1)   NOT NULL DEFAULT 1,
@@ -46,7 +45,6 @@ CREATE TABLE IF NOT EXISTS eb_overseas_product (
     tag         VARCHAR(128)     NULL,
     blurb       JSON             NULL COMMENT '多语言简介（也可存单语言纯文本）',
     specs       JSON             NULL COMMENT '参数 {"Mix ratio":"2 : 1",...}',
-    localized_content JSON NULL COMMENT '多语言单位、角标和规格参数',
     is_show     TINYINT(1)   NOT NULL DEFAULT 1,
     sort        INT          NOT NULL DEFAULT 0,
     create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -171,3 +169,44 @@ CREATE TABLE IF NOT EXISTS eb_overseas_chat_message (
     PRIMARY KEY (id),
     KEY idx_session (session_id, id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外在线聊天消息';
+
+-- 访客统计（全站上报 /api/track + 后台「访客统计」页）。已部署的库改跑 sql/visitors.sql。
+-- 与聊天分开：聊天只记开过聊天框的人，这两张表记所有访客（一行一个 token）
+-- 和逐条浏览/点击事件（PV/UV/趋势只数 kind='view'，点击不算浏览量）。
+CREATE TABLE IF NOT EXISTS eb_overseas_visitor (
+    id               BIGINT       NOT NULL AUTO_INCREMENT,
+    token            VARCHAR(128) NOT NULL COMMENT '访客随机 token（唯一身份）',
+    ip               VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '访客 IP（x-forwarded-for 优先）',
+    country          VARCHAR(64)  NOT NULL DEFAULT '' COMMENT 'ip-api 地区解析：国家（内网记「本地/内网」）',
+    region           VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '省/州',
+    city             VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '城市',
+    timezone         VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '访客时区',
+    device           VARCHAR(16)  NOT NULL DEFAULT '' COMMENT 'desktop/mobile/tablet（UA 解析）',
+    browser          VARCHAR(32)  NOT NULL DEFAULT '' COMMENT '浏览器（UA 解析）',
+    os               VARCHAR(32)  NOT NULL DEFAULT '' COMMENT '操作系统（UA 解析）',
+    is_bot           TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'UA 疑似机器人（仅信号，不拦截）',
+    referrer         VARCHAR(512) NOT NULL DEFAULT '' COMMENT '来源页 document.referrer',
+    first_page       VARCHAR(512) NOT NULL DEFAULT '' COMMENT '首次落地页标签',
+    current_page     VARCHAR(512) NOT NULL DEFAULT '' COMMENT '当前页标签',
+    page_views       INT          NOT NULL DEFAULT 0 COMMENT '累计浏览页数（只数 view）',
+    visits           INT          NOT NULL DEFAULT 0 COMMENT '来访次数（间隔超 30 分钟算新一次）',
+    first_seen       DATETIME     NULL COMMENT '首次访问时间',
+    last_seen        DATETIME     NULL COMMENT '最近活动时间，60 秒内视为在线',
+    visit_started_at DATETIME     NULL COMMENT '本次访问开始时间（新访问时重置）',
+    dwell_sec        INT          NOT NULL DEFAULT 0 COMMENT '累计停留秒数（单步增量封顶 90 秒）',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_token (token),
+    KEY idx_last_seen (last_seen)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外访客统计（访客行）';
+
+CREATE TABLE IF NOT EXISTS eb_overseas_visit_event (
+    id          BIGINT       NOT NULL AUTO_INCREMENT,
+    token       VARCHAR(128) NOT NULL COMMENT '访客 token',
+    kind        VARCHAR(16)  NOT NULL DEFAULT 'view' COMMENT 'view 浏览 / click 点击',
+    page        VARCHAR(512) NOT NULL DEFAULT '' COMMENT '事件发生时的页标签',
+    action      VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'click 的描述（如 点商品:1K141），view 为空',
+    create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_token (token, id),
+    KEY idx_kind_time (kind, create_time)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '海外访客行程事件';
