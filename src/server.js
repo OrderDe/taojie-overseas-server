@@ -400,7 +400,77 @@ const DEFAULT_CONFIG = {
   // {lang: text} map like product names) and a photo gallery. The PUT
   // handler shape-guards it (sanitizeProfileContent), so the storefront
   // can render whatever is stored without defensive checks.
-  profileContent: { heroImages: [], sections: [], gallery: [] },
+  // The default below is starter content taken from the company's own
+  // sfsy profile pages (jieshao_1/jieshao_2, zh+en) so the page is fully
+  // populated — and editable in the admin 「公司简介」 page — from day one;
+  // any config saved from the admin replaces it wholesale.
+  profileContent: {
+    heroImages: [
+      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8361.jpg',
+      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8362.jpg',
+      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8363.jpg',
+      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8364.jpg',
+      'https://cdn.taojieyph.com/images/20250908/68ad8de345fce8365.jpg'
+    ],
+    sections: [
+      {
+        title: { zh: '公司简介', en: 'Company Introduction' },
+        body: {
+          zh: '广州三合涂料科技有限公司是一家高新技术企业，专注于汽车漆和工业漆的研发、生产与销售，拥有超过二十年的涂料生产经验。',
+          en: 'Guangzhou Sanhe Coating Technology Co., Ltd. is a high-tech enterprise, focusing on the research and development, production, and sales of automotive and industrial coatings, with over twenty years of experience in paint production.'
+        },
+        bullets: []
+      },
+      {
+        title: { zh: '产品系列', en: 'Product Series' },
+        body: {},
+        bullets: [
+          { zh: '汽车漆', en: 'Automotive Coatings' },
+          { zh: '清漆', en: 'Clear Coats' },
+          { zh: '固化剂', en: 'Hardeners' },
+          { zh: '稀释剂', en: 'Diluents' },
+          { zh: '1K2K色漆辅料', en: '1K2K Color Coatings Auxiliary' }
+        ]
+      },
+      {
+        title: { zh: '技术研发', en: 'Technology R&D' },
+        body: {
+          zh: '公司高度重视技术研发，建立了专业的研发及售后团队。我们不断引进先进的生产和检测设备，以确保客户产品的高品质。',
+          en: 'The company places great emphasis on technology research and development, establishing a professional R&D and after-sales team. We continuously introduce advanced production and testing equipment to ensure the high quality of our customers\' products.'
+        },
+        bullets: []
+      },
+      {
+        title: { zh: '产品优势', en: 'Product Advantages' },
+        body: {},
+        bullets: [
+          { zh: '质量优良', en: 'High Quality' },
+          { zh: '稳定性好', en: 'Good Stability' },
+          { zh: '附着力强', en: 'Strong Adhesion' },
+          { zh: '遮盖力好', en: 'Good Coverage' },
+          { zh: '耐候性好', en: 'Excellent Weather Resistance' },
+          { zh: '光泽饱满', en: 'Full Gloss' }
+        ]
+      },
+      {
+        title: { zh: '市场地位', en: 'Market Position' },
+        body: {
+          zh: '广州三合涂料已成为国内领先的涂料生产厂家，产品远销全球30多个国家。',
+          en: 'Guangzhou Sanhe Coating has become a leading domestic coating manufacturer, with products sold in over 30 countries worldwide.'
+        },
+        bullets: []
+      },
+      {
+        title: { zh: '生产与研发', en: 'Production and R&D' },
+        body: {
+          zh: '公司重视精湛技术，不断引进先进的涂料生产设备和检测设备。生产包括汽车修补漆、工业漆、机械金属漆等多种高端、质量稳定的涂料。设有研发部门，从原材料检测到生产过程严格控制品质保证。致力于新产品的开发，为客户提供最专业的服务。',
+          en: 'The company values exquisite technology and continuously introduces advanced coating production and testing equipment. We produce a variety of high-end, stable quality coatings, including automotive touch-up paints, industrial coatings, and machinery metal coatings. We have a dedicated R&D department that strictly controls the quality from raw material testing to the production process to ensure quality assurance. We are committed to the development of new products, providing the most professional services to our customers.'
+        },
+        bullets: []
+      }
+    ],
+    gallery: []
+  },
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
