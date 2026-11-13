@@ -63,6 +63,10 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         // Header search-box placeholder copy ({lang: text} map, mirrors
         // the Node backend); empty = the storefront's built-in i18n copy.
         DEFAULTS.put("searchPlaceholder", new LinkedHashMap<>());
+        // Hero "talk to sales" button behaviour (mirrors the Node
+        // backend): contact = contact-details modal (default),
+        // rfq = quote form, chat = online chat.
+        DEFAULTS.put("salesBtnAction", "contact");
         // Footer content (mirrors the Node backend's defaults, which
         // reproduce the storefront's previously hardcoded footer).
         DEFAULTS.put("footerBlurb", langMap(
@@ -88,7 +92,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
                 footerLink(langMap("小家电", "Appliances"), "category", "", "")
         )));
         columns.add(footerColumn(langMap("买家服务", "Buyers"), java.util.List.of(
-                footerLink(langMap("索取报价", "Request a Quote"), "anchor", "#rfq", ""),
+                footerLink(langMap("免费获取报价", "Request a Quote"), "anchor", "#rfq", ""),
                 footerLink(langMap("经销商计划", "Distributor Program"), "", "", ""),
                 footerLink(langMap("私牌定制", "Private Label"), "", "", ""),
                 footerLink(langMap("样品", "Samples"), "", "", "")
@@ -454,6 +458,12 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if (request.getSearchPlaceholder() != null) {
             put("searchPlaceholder", JSONUtil.toJsonStr(sanitizeLangMap(request.getSearchPlaceholder(), 200)));
         }
+        // Sales-button behaviour is a three-value enum; anything else
+        // is stored as 'contact' (same contract as the Node backend).
+        if (request.getSalesBtnAction() != null) {
+            put("salesBtnAction", ("rfq".equals(request.getSalesBtnAction()) || "chat".equals(request.getSalesBtnAction()))
+                    ? request.getSalesBtnAction() : "contact");
+        }
         // Footer fields are stored as JSON strings, like profileContent.
         if (request.getFooterBlurb() != null) {
             put("footerBlurb", JSONUtil.toJsonStr(sanitizeLangMap(request.getFooterBlurb(), 1000)));
@@ -528,6 +538,9 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         }
         if ("profileMode".equals(key)) {
             return "custom".equals(value) ? "custom" : "embed";
+        }
+        if ("salesBtnAction".equals(key)) {
+            return ("rfq".equals(value) || "chat".equals(value)) ? value : "contact";
         }
         if ("searchPlaceholder".equals(key) || "footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)) {
             if (StrUtil.isBlank(value)) {

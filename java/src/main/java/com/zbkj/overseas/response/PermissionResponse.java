@@ -7,7 +7,8 @@ import lombok.Data;
 import java.io.Serializable;
 
 /**
- * One menu-permission definition (key + display label) for the role editor.
+ * One menu-permission definition (key + display label + the UI group the
+ * role editor files it under) for the role editor.
  */
 @Data
 @AllArgsConstructor
@@ -19,4 +20,6 @@ public class PermissionResponse implements Serializable {
     private String key;
 
     private String label;
+
+    private String group;
 }

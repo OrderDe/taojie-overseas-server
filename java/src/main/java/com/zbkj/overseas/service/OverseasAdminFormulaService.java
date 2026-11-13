@@ -7,7 +7,7 @@ import com.zbkj.overseas.response.FormulaLinesResponse;
 import java.util.Map;
 
 /**
- * Admin paint-formula library (perm "formula"): config-driven CRUD over
+ * Admin paint-formula library (per-resource menu keys, see OverseasAdminServiceImpl.FORMULA_RESOURCE_PERM): config-driven CRUD over
  * the dictionary entities — car-brands, car-models, car-countries,
  * car-factories, color-cards, masterbatches, car-colors, color-brands —
  * plus colour numbers and their formula lines. Mirrors the Node

@@ -5,6 +5,7 @@ import com.zbkj.overseas.model.OverseasAdminUser;
 import com.zbkj.overseas.request.AdminRoleSaveRequest;
 import com.zbkj.overseas.request.AdminUserSaveRequest;
 import com.zbkj.overseas.request.LoginRequest;
+import com.zbkj.overseas.request.SiteConfigRequest;
 import com.zbkj.overseas.response.AdminPrincipal;
 import com.zbkj.overseas.response.AdminRoleResponse;
 import com.zbkj.overseas.response.AdminUserResponse;
@@ -17,12 +18,12 @@ import java.util.List;
  * Admin accounts service — user login, sessions, and role (menu
  * permission) management for the overseas management UI. Same contract
  * as the Node backend: the shared ADMIN_TOKEN remains a break-glass root
- * credential, accounts log in for a session token, roles carry the
- * products / categories / rfq / config / users permissions.
+ * credential, accounts log in for a session token, roles carry one
+ * permission key per sidebar menu.
  */
 public interface OverseasAdminService extends IService<OverseasAdminUser> {
 
-    /** The five menu permissions, in UI order. */
+    /** The menu permissions (one per sidebar menu), in UI order. */
     List<PermissionResponse> permissionDefs();
 
     /** Username + password login; throws OverseasException on bad credentials. */
@@ -39,6 +40,21 @@ public interface OverseasAdminService extends IService<OverseasAdminUser> {
 
     /** Permission key a /api/admin path needs, or null for "any account". */
     String requiredPerm(String path);
+
+    /** For paths any one of several keys opens (the upload endpoint):
+     *  the acceptable keys, or null when requiredPerm governs the path. */
+    List<String> requiredPermAnyOf(String path);
+
+    /** Whether a permission key belongs to the formula menu group. */
+    boolean isFormulaGroupKey(String key);
+
+    /**
+     * PUT /api/admin/site-config is shared by five settings pages, each
+     * owning a slice of the config. Returns the menu key the principal
+     * still needs for the slices this request touches, or null when the
+     * save is allowed.
+     */
+    String siteConfigSaveDenial(SiteConfigRequest request, AdminPrincipal principal);
 
     List<AdminUserResponse> listUsers();
 

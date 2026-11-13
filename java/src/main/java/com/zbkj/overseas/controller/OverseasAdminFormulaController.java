@@ -24,8 +24,8 @@ import java.util.Map;
 /**
  * Admin paint-formula library. Every path sits under /api/admin/formula
  * or /api/admin/formula-numbers, so AdminTokenInterceptor guards them
- * with the "formula" menu permission — same contract as the Node
- * backend. Entity keys: car-brands / car-models / car-countries /
+ * with the per-resource menu permission keys — same contract as the
+ * Node backend. Entity keys: car-brands / car-models / car-countries /
  * car-factories / color-cards / masterbatches / car-colors /
  * color-brands. Bodies are plain JSON maps, applied by field name.
  */
