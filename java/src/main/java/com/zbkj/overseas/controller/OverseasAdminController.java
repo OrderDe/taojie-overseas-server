@@ -5,13 +5,17 @@ import com.zbkj.overseas.common.result.CommonResult;
 import com.zbkj.overseas.common.result.CommonResultCode;
 import com.zbkj.overseas.request.BrandSaveRequest;
 import com.zbkj.overseas.request.CategorySaveRequest;
+import com.zbkj.overseas.request.CustomPageSaveRequest;
 import com.zbkj.overseas.request.ProductSaveRequest;
+import com.zbkj.overseas.request.ProductSortRequest;
 import com.zbkj.overseas.request.UploadRequest;
 import com.zbkj.overseas.response.AdminBrandResponse;
 import com.zbkj.overseas.response.AdminCategoryResponse;
 import com.zbkj.overseas.response.AdminProductResponse;
+import com.zbkj.overseas.response.CustomPageResponse;
 import com.zbkj.overseas.service.OverseasBrandService;
 import com.zbkj.overseas.service.OverseasCategoryService;
+import com.zbkj.overseas.service.OverseasCustomPageService;
 import com.zbkj.overseas.service.OverseasProductService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -56,6 +60,9 @@ public class OverseasAdminController {
     @Autowired
     private OverseasBrandService brandService;
 
+    @Autowired
+    private OverseasCustomPageService pageService;
+
     @Value("${overseas.upload-dir:./data/uploads}")
     private String uploadDir;
 
@@ -64,10 +71,18 @@ public class OverseasAdminController {
 
     // ---- products ----
 
-    @Operation(summary = "管理端：全部商品（含下架）")
+    @Operation(summary = "管理端：全部商品（含下架），可按分类筛选（includeChildren 时含全部下级分类）")
     @GetMapping("/products")
-    public CommonResult<List<AdminProductResponse>> products() {
-        return CommonResult.success(productService.listForAdmin());
+    public CommonResult<List<AdminProductResponse>> products(
+            @RequestParam(required = false) String categoryId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeChildren) {
+        return CommonResult.success(productService.listForAdmin(categoryId, includeChildren));
+    }
+
+    @Operation(summary = "管理端：商品批量排序（一次事务更新多件商品的排序值）")
+    @PostMapping("/products/sort")
+    public CommonResult<Map<String, Object>> sortProducts(@RequestBody ProductSortRequest request) {
+        return CommonResult.success(Map.of("ok", true, "updated", productService.updateSorts(request)));
     }
 
     @Operation(summary = "管理端：新建商品")
@@ -143,6 +158,34 @@ public class OverseasAdminController {
     @DeleteMapping("/brands/{id}")
     public CommonResult<Map<String, Object>> deleteBrand(@PathVariable String id) {
         brandService.deleteForAdmin(id);
+        return CommonResult.success(Map.of("ok", true));
+    }
+
+    // ---- custom pages ----
+
+    @Operation(summary = "管理端：全部自定义页面（含隐藏）")
+    @GetMapping("/pages")
+    public CommonResult<List<CustomPageResponse>> pages() {
+        return CommonResult.success(pageService.listForAdmin());
+    }
+
+    @Operation(summary = "管理端：新建自定义页面")
+    @PostMapping("/pages")
+    public CommonResult<CustomPageResponse> createPage(@RequestBody CustomPageSaveRequest request) {
+        return CommonResult.success(pageService.saveForAdmin(request, null));
+    }
+
+    @Operation(summary = "管理端：修改自定义页面")
+    @PutMapping("/pages/{id}")
+    public CommonResult<CustomPageResponse> updatePage(@PathVariable Long id,
+                                                       @RequestBody CustomPageSaveRequest request) {
+        return CommonResult.success(pageService.saveForAdmin(request, id));
+    }
+
+    @Operation(summary = "管理端：删除自定义页面")
+    @DeleteMapping("/pages/{id}")
+    public CommonResult<Map<String, Object>> deletePage(@PathVariable Long id) {
+        pageService.deleteForAdmin(id);
         return CommonResult.success(Map.of("ok", true));
     }
 

@@ -208,6 +208,9 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         if (path.equals("/api/admin/site-config")) {
             return "config";
         }
+        if (path.startsWith("/api/admin/pages")) {
+            return "config";
+        }
         return null;
     }
 

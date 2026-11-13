@@ -8,6 +8,9 @@
 //   GET  /api/products/:id?lang=
 //   GET  /api/keywords
 //   GET  /api/site-config
+//   GET  /api/pages                    (custom pages: enabled list [{slug, titles}])
+//   GET  /api/pages/:slug              (one custom page, full content; 404 when hidden/missing)
+//   GET|POST|PUT|DELETE /api/admin/pages[/:id]       (custom page management; perm config)
 //   POST /api/rfq                      (lead capture, stored in SQLite)
 //   POST /api/chat/start               (visitor chat: create/reuse a session)
 //   GET|POST /api/chat/messages        (visitor chat: pull (afterId) / send)
@@ -103,6 +106,16 @@ db.exec(`
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL DEFAULT '{}'
   );
+  CREATE TABLE IF NOT EXISTS custom_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    titles TEXT NOT NULL DEFAULT '{}',
+    sections TEXT NOT NULL DEFAULT '[]',
+    gallery TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE IF NOT EXISTS fx_rates (
     base TEXT PRIMARY KEY,
     rates TEXT NOT NULL DEFAULT '{}',
@@ -161,7 +174,8 @@ db.exec(`
     agent_typing_at TEXT NOT NULL DEFAULT '',
     visitor_read_msg_id INTEGER NOT NULL DEFAULT 0,
     note TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'open'
+    status TEXT NOT NULL DEFAULT 'open',
+    product TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,6 +226,10 @@ try { db.exec("ALTER TABLE products ADD COLUMN video TEXT NOT NULL DEFAULT ''") 
 // "price on request" (面议), after which the storefront shows no numeric
 // price and the product can only be enquired about, never carted.
 try { db.exec('ALTER TABLE products ADD COLUMN negotiable INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
+// Categories gained a hierarchy (parent_id, '' = top level, max 3
+// levels) to mirror the Java backend's category tree; older databases
+// gain the column here and every existing category stays top level.
+try { db.exec("ALTER TABLE categories ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
 // Chat sessions gained a visitor profile (geo/device/UA), presence
 // (last_seen), typing + read watermarks, an internal note and a lifecycle
 // status when the chat grew into a small support console. Add in place.
@@ -224,7 +242,11 @@ for (const col of [
   "page_views INTEGER NOT NULL DEFAULT 0", "last_seen_at TEXT NOT NULL DEFAULT ''",
   "suspect_bot INTEGER NOT NULL DEFAULT 0", "visitor_typing_at TEXT NOT NULL DEFAULT ''",
   "agent_typing_at TEXT NOT NULL DEFAULT ''", "visitor_read_msg_id INTEGER NOT NULL DEFAULT 0",
-  "note TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'open'"
+  "note TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'open'",
+  // Product snapshot the visitor is asking about (JSON: id/name/image/
+  // priceLabel/negotiable), set when they tap 询价 on a product and the
+  // chat opens with that product attached.
+  "product TEXT NOT NULL DEFAULT ''"
 ]) {
   try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`) } catch { /* already there */ }
 }
@@ -355,6 +377,7 @@ function seedIfEmpty() {
   console.log(`seeded ${seed.products?.length || 0} products, ${seed.categories?.length || 0} categories`)
 }
 seedIfEmpty()
+seedCustomPagesIfEmpty()
 
 // Formula library first boot: when the formula tables are still empty
 // and the repo carries the sfsy data file, import it automatically —
@@ -409,7 +432,7 @@ try {
 
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
-  announcement: '', showRfq: true, showCart: false, showDealer: false, showContact: true, whatsapp: '', email: '', currency: 'USD',
+  announcement: '', showRfq: true, showCart: false, showPrices: true, showDealer: false, showContact: true, whatsapp: '', email: '', currency: 'USD',
   baseCurrency: 'CNY', // currency the stored product prices are in; the storefront converts for display
   logo: '', // header logo image URL; empty = storefront shows the text store name
   // Homepage content blocks (admin-editable; empty = storefront falls back
@@ -570,6 +593,45 @@ const DEFAULT_CONFIG = {
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
   tiktok: '', instagram: '', facebook: '', youtube: '', wechat: '',
+  // Footer content (admin-editable on the 「页脚」 page): the brand
+  // blurb, the note and the copyright line are {lang: text} maps (the
+  // copyright supports a {year} placeholder the storefront replaces
+  // with the current year); footerColumns are link columns whose links
+  // jump like nav items (category / anchor / page / external; '' =
+  // text only). A category link with an empty categoryId is matched
+  // by label against the live category list on the storefront and
+  // degrades to plain text when nothing matches. The PUT handler
+  // shape-guards all four fields (see the sanitize helpers below).
+  // Defaults reproduce the storefront's previously hardcoded footer.
+  footerBlurb: {
+    zh: '淘街商城海外 PC 展示站——汽车涂料与日用品，工厂直供。',
+    en: 'Overseas PC showcase for the Taojie mall — automotive coatings and daily goods, direct from the factory.'
+  },
+  footerNote: {
+    zh: '本站仅作展示：购物车与询价只保存在本设备上，不涉及结算与支付。',
+    en: 'Showcase only: the cart and RFQ are stored on this device. No checkout or payment happens here.'
+  },
+  footerCopyright: { zh: '© {year} Taojie.', en: '© {year} Taojie.' },
+  footerColumns: [
+    {
+      title: { zh: '购物', en: 'Shop' },
+      links: [
+        { labels: { zh: '汽车漆', en: 'Automotive Paint' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '底漆与清漆', en: 'Primers & Clear Coats' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '家居生活', en: 'Home & Living' }, type: 'category', link: '', categoryId: '' },
+        { labels: { zh: '小家电', en: 'Appliances' }, type: 'category', link: '', categoryId: '' }
+      ]
+    },
+    {
+      title: { zh: '买家服务', en: 'Buyers' },
+      links: [
+        { labels: { zh: '索取报价', en: 'Request a Quote' }, type: 'anchor', link: '#rfq', categoryId: '' },
+        { labels: { zh: '经销商计划', en: 'Distributor Program' }, type: '', link: '', categoryId: '' },
+        { labels: { zh: '私牌定制', en: 'Private Label' }, type: '', link: '', categoryId: '' },
+        { labels: { zh: '样品', en: 'Samples' }, type: '', link: '', categoryId: '' }
+      ]
+    }
+  ],
   // Internal: sha256 of the bundled willis catalogue last synced into
   // the products table (see the startup sync above); not admin-edited.
   willisImportHash: ''
@@ -648,6 +710,170 @@ function sanitizeProfileContent(raw) {
       text: sanitizeLangMap(t.text, 1000)
     }))
   return { banner, heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
+}
+
+// ---- Footer content guards ----
+// Same philosophy as the profile content above: the blurb / note /
+// copyright are {lang: text} maps (bounded like section text), and the
+// link columns are capped (4 columns × 10 links) with each link's jump
+// type whitelisted to the nav dispatcher's vocabulary, so a junk or
+// hostile payload cannot smuggle an arbitrary action into the footer.
+const FOOTER_LINK_TYPES = ['', 'category', 'anchor', 'page', 'external']
+function sanitizeFooterColumns(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+    .slice(0, 4)
+    .map((c) => ({
+      title: sanitizeLangMap(c.title, 300),
+      links: (Array.isArray(c.links) ? c.links : [])
+        .filter((l) => l && typeof l === 'object' && !Array.isArray(l))
+        .slice(0, 10)
+        .map((l) => ({
+          labels: sanitizeLangMap(l.labels, 300),
+          type: FOOTER_LINK_TYPES.includes(String(l.type || '')) ? String(l.type || '') : '',
+          link: typeof l.link === 'string' ? l.link.trim().slice(0, 1000) : '',
+          categoryId: typeof l.categoryId === 'string' ? l.categoryId.trim().slice(0, 100) : ''
+        }))
+    }))
+}
+
+// ---- Category hierarchy (Node mirror of the Java CategoryHierarchy) ----
+// Categories form a tree up to 3 levels deep via parent_id ('' = top
+// level). The admin category list's "含下级" count and the admin
+// product list's includeChildren filter MUST share one definition of
+// "this category plus all its descendants" — both go through
+// categorySubtreeIds below, exactly like the Java side shares
+// OverseasCategoryService.subtreeIds, so the number an admin sees on
+// the category page always equals the total behind the click.
+function allCategoryRows() {
+  return db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
+}
+function categorySubtreeIds(rows, id) {
+  const children = new Map()
+  for (const r of rows) {
+    const p = String(r.parent_id || '')
+    if (!children.has(p)) children.set(p, [])
+    children.get(p).push(String(r.id))
+  }
+  const out = new Set([String(id)])
+  const queue = [String(id)]
+  while (queue.length) {
+    const cur = queue.shift()
+    for (const kid of children.get(cur) || []) {
+      if (!out.has(kid)) { out.add(kid); queue.push(kid) }
+    }
+  }
+  return out
+}
+function categoryLevel(rows, id) {
+  const byId = new Map(rows.map((r) => [String(r.id), r]))
+  let level = 0
+  let cur = byId.get(String(id))
+  const seen = new Set()
+  while (cur) {
+    level++
+    const p = String(cur.parent_id || '')
+    if (!p || seen.has(p)) break
+    seen.add(p)
+    cur = byId.get(p)
+  }
+  return level
+}
+function categorySubtreeHeight(rows, id, depth = 0) {
+  if (depth > 10) return 0
+  const kids = rows.filter((r) => String(r.parent_id || '') === String(id))
+  if (!kids.length) return 0
+  return 1 + Math.max(...kids.map((k) => categorySubtreeHeight(rows, k.id, depth + 1)))
+}
+// Returns an error message when the (re)parenting is invalid, else
+// null: the parent must exist, a category cannot sit under itself or
+// its own descendant, and the resulting tree stays within 3 levels.
+function validateCategoryParent(rows, id, parentId) {
+  if (!parentId) return null
+  const byId = new Map(rows.map((r) => [String(r.id), r]))
+  if (!byId.has(parentId)) return 'parent category not found'
+  if (parentId === String(id)) return 'a category cannot be its own parent'
+  let cur = byId.get(parentId)
+  const seen = new Set()
+  while (cur) {
+    if (String(cur.id) === String(id)) return 'cannot move a category under its own descendant'
+    const p = String(cur.parent_id || '')
+    if (!p || seen.has(p)) break
+    seen.add(p)
+    cur = byId.get(p)
+  }
+  const height = id && byId.has(String(id)) ? categorySubtreeHeight(rows, id) : 0
+  if (categoryLevel(rows, parentId) + 1 + height > 3) return 'categories support at most 3 levels'
+  return null
+}
+
+// ---- Custom pages (admin-authored standalone pages the nav can point to) ----
+// Same guard philosophy as profileContent: lang maps keep string values
+// only (truncated), section images go through the URL rule, lists are
+// capped. The slug is the page's stable public handle (nav items store
+// it), so it is validated strictly and stays unique.
+const CUSTOM_PAGE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
+function sanitizeCustomPage(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {}
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .filter((s) => s && typeof s === 'object' && !Array.isArray(s))
+    .slice(0, 30)
+    .map((s) => ({
+      title: sanitizeLangMap(s.title, 300),
+      body: sanitizeLangMap(s.body, 5000),
+      image: sanitizeImageUrl(s.image)
+    }))
+  return {
+    slug: typeof raw.slug === 'string' ? raw.slug.trim() : '',
+    titles: sanitizeLangMap(raw.titles, 300),
+    sections,
+    gallery: sanitizeImageList(raw.gallery),
+    enabled: raw.enabled !== false,
+    sort: Math.trunc(Number(raw.sort) || 0)
+  }
+}
+function customPageOut(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    titles: parseJsonCol(row.titles, {}),
+    sections: parseJsonCol(row.sections, []),
+    gallery: parseJsonCol(row.gallery, []),
+    enabled: row.enabled === 1,
+    sort: row.sort,
+    updatedAt: row.updated_at || ''
+  }
+}
+// One sample page on first boot (only while the table is empty) so the
+// owner sees the feature working end to end; it is a normal row — she
+// can edit or delete it in the admin like any other page.
+function seedCustomPagesIfEmpty() {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM custom_pages').get()
+  if (Number(n) > 0) return
+  const img = (name) => `https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/${name}`
+  const page = sanitizeCustomPage({
+    slug: 'cases',
+    titles: { zh: '客户案例', en: 'Cases' },
+    enabled: true,
+    sort: 1,
+    sections: [
+      {
+        title: { zh: '我们的工厂', en: 'Our Factory' },
+        body: { zh: '我们拥有专业的生产设备与经验丰富的生产团队。\n\n产品质量有保障，发货速度快！', en: 'WE HAVE PROFESSIONAL PRODUCTION EQUIPMENT AND EXPERIENCED MANUFACTURERS.\n\nTHE QUALITY OF THE PRODUCT IS GUARANTEED, AND THE SHIPMENT SPEED IS FAST!' },
+        image: img('1779626894357.jpg')
+      },
+      {
+        title: { zh: '仓储与发货', en: 'Warehousing & Shipping' },
+        body: { zh: '专业的生产设备与经验丰富的生产团队，产品质量有保障，发货速度快。', en: 'Professional production equipment and an experienced team — guaranteed product quality and fast shipment.' },
+        image: img('1779626894649.jpg')
+      }
+    ],
+    gallery: [img('1779626894497.jpg'), img('1779626894850.jpg'), img('1779626894947.jpg')]
+  })
+  db.prepare('INSERT INTO custom_pages (slug, titles, sections, gallery, enabled, sort, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString())
+  console.log('seeded sample custom page: cases')
 }
 
 function pickLang(namesJson, lang) {
@@ -825,6 +1051,7 @@ function requiredPerm(path) {
   if (path.startsWith('/api/admin/visitors')) return 'visitors'
   if (path.startsWith('/api/admin/formula')) return 'formula'
   if (path === '/api/admin/site-config') return 'config'
+  if (path.startsWith('/api/admin/pages')) return 'config'
   return null
 }
 
@@ -1228,8 +1455,29 @@ function chatSessionOut(s) {
     lastSeenAt: s.last_seen_at || '', online: chatOnline(s),
     suspectBot: s.suspect_bot === 1, msgCount: n,
     status: s.status || 'open', note: s.note || '',
+    product: parseJsonCol(s.product, null),
     visitorReadMsgId: s.visitor_read_msg_id || 0,
     visitorTyping: chatTyping(s.visitor_typing_at), agentTyping: chatTyping(s.agent_typing_at)
+  }
+}
+
+// Sanitise the product snapshot a visitor attaches to a chat session
+// (they tapped 询价 on a product card / detail page). Returns the plain
+// object to store as JSON, or null when the payload is unusable — the
+// caller treats null as "clear the stored snapshot".
+function sanitizeChatProduct(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const text = (x, max) => String(x ?? '').trim().slice(0, max)
+  const name = text(v.name, 200)
+  if (!name) return null
+  let image = text(v.image, 1000)
+  if (image && !/^(https?:)?\/\//i.test(image) && !image.startsWith('/')) image = ''
+  return {
+    id: text(v.id, 64),
+    name,
+    image,
+    priceLabel: text(v.priceLabel, 64),
+    negotiable: v.negotiable === true || v.negotiable === 1
   }
 }
 
@@ -1509,10 +1757,16 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/categories') {
-      const rows = db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
+      const rows = allCategoryRows()
       const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products WHERE active = 1 GROUP BY category_id').all()
       const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
-      return send(res, 200, rows.map((c) => ({ id: c.id, name: pickLang(c.names, lang), count: byId[c.id] || 0 })))
+      // count covers the whole subtree (visible products), matching
+      // the Java backend; parentId lets the storefront group the tree.
+      return send(res, 200, rows.map((c) => {
+        let count = 0
+        for (const sid of categorySubtreeIds(rows, c.id)) count += byId[sid] || 0
+        return { id: c.id, parentId: String(c.parent_id || ''), name: pickLang(c.names, lang), count }
+      }))
     }
 
     if (req.method === 'GET' && path === '/api/products') {
@@ -1521,7 +1775,7 @@ const server = createServer(async (req, res) => {
       const brandId = url.searchParams.get('brandId') || ''
       const page = Math.max(1, Number(url.searchParams.get('page') || 1))
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 48)))
-      let rows = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort, id').all()
+      let rows = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort DESC, id DESC').all()
       if (categoryId) rows = rows.filter((r) => r.category_id === categoryId)
       if (brandId) rows = rows.filter((r) => String(r.brand_id || '') === String(brandId))
       if (keyword) {
@@ -1550,6 +1804,20 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/api/site-config') {
       return send(res, 200, getConfig())
+    }
+
+    // ---- Custom pages (public): the nav can point at admin-authored
+    // standalone pages. The list only exposes enabled pages' handles;
+    // a hidden or unknown slug is a plain 404.
+    if (req.method === 'GET' && path === '/api/pages') {
+      const rows = db.prepare('SELECT slug, titles FROM custom_pages WHERE enabled = 1 ORDER BY sort, id').all()
+      return send(res, 200, rows.map((r) => ({ slug: r.slug, titles: parseJsonCol(r.titles, {}) })))
+    }
+    const publicPageMatch = path.match(/^\/api\/pages\/([^/]+)$/)
+    if (req.method === 'GET' && publicPageMatch) {
+      const row = db.prepare('SELECT * FROM custom_pages WHERE slug = ? AND enabled = 1').get(decodeURIComponent(publicPageMatch[1]))
+      if (!row) return send(res, 404, { error: 'page not found' })
+      return send(res, 200, customPageOut(row))
     }
 
     // Public FX rates for the storefront currency switcher — same
@@ -1582,6 +1850,11 @@ const server = createServer(async (req, res) => {
       // falls back to 'embed' — and the custom content is shape-guarded.
       merged.profileMode = merged.profileMode === 'custom' ? 'custom' : 'embed'
       merged.profileContent = sanitizeProfileContent(merged.profileContent)
+      // Footer fields are shape-guarded the same way (see the helpers).
+      merged.footerBlurb = sanitizeLangMap(merged.footerBlurb, 1000)
+      merged.footerNote = sanitizeLangMap(merged.footerNote, 1000)
+      merged.footerCopyright = sanitizeLangMap(merged.footerCopyright, 200)
+      merged.footerColumns = sanitizeFooterColumns(merged.footerColumns)
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)
@@ -1673,6 +1946,11 @@ const server = createServer(async (req, res) => {
       const ip = clientIpOf(req)
       const nowIso = new Date().toISOString()
       const existing = chatSessionByToken(String(body.token || req.headers['x-chat-token'] || '').trim())
+      // Product attachment contract: a `product` object sets/replaces the
+      // snapshot, `clearProduct: true` removes it, neither leaves it as is.
+      const hasProduct = Object.prototype.hasOwnProperty.call(body, 'product') && body.product != null
+      const cleanProduct = hasProduct ? sanitizeChatProduct(body.product) : null
+      const productJson = cleanProduct ? JSON.stringify(cleanProduct) : ''
       if (existing) {
         // Reuse: refresh presence, and follow the visitor to a new page.
         const page = chatPageLabel(body.page, body.pageTitle)
@@ -1681,6 +1959,11 @@ const server = createServer(async (req, res) => {
             .run(nowIso, page, existing.id)
         } else {
           db.prepare('UPDATE chat_sessions SET last_seen_at = ? WHERE id = ?').run(nowIso, existing.id)
+        }
+        if (hasProduct) {
+          db.prepare('UPDATE chat_sessions SET product = ? WHERE id = ?').run(productJson, existing.id)
+        } else if (body.clearProduct === true) {
+          db.prepare("UPDATE chat_sessions SET product = '' WHERE id = ?").run(existing.id)
         }
         return send(res, 200, { sessionId: existing.id, token: existing.visitor_token, name: existing.visitor_name })
       }
@@ -1691,12 +1974,12 @@ const server = createServer(async (req, res) => {
       const local = isPrivateIp(ip)
       const info = db.prepare(`INSERT INTO chat_sessions
         (visitor_token, visitor_name, lang, created_at, last_msg_at, ip, country, device, browser, os,
-         referrer, current_page, page_views, last_seen_at, suspect_bot, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'open')`)
+         referrer, current_page, page_views, last_seen_at, suspect_bot, status, product)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'open', ?)`)
         .run(token, name, LANGS.includes(body.lang) ? body.lang : 'en', nowIso, nowIso,
           ip, local ? '本地/内网' : '', ua.device, ua.browser, ua.os,
           String(body.referrer || '').trim().slice(0, 500), chatPageLabel(body.page, body.pageTitle),
-          nowIso, ua.suspectBot ? 1 : 0)
+          nowIso, ua.suspectBot ? 1 : 0, productJson)
       const sessionId = Number(info.lastInsertRowid)
       if (!local) lookupChatGeo(sessionId, ip)
       return send(res, 201, { sessionId, token, name })
@@ -2123,8 +2406,41 @@ const server = createServer(async (req, res) => {
     // ---- Admin: product management ----
     if (path === '/api/admin/products' && req.method === 'GET') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
-      const rows = db.prepare('SELECT * FROM products ORDER BY sort, id').all()
+      let rows = db.prepare('SELECT * FROM products ORDER BY sort DESC, id DESC').all()
+      // Optional category filter: exact category by default; with
+      // includeChildren=1 the filter covers the category's whole
+      // subtree — the same categorySubtreeIds set the category list's
+      // product count is computed from.
+      const filterCategory = url.searchParams.get('categoryId') || ''
+      if (filterCategory) {
+        const includeChildren = ['1', 'true'].includes((url.searchParams.get('includeChildren') || '').toLowerCase())
+        const ids = includeChildren ? categorySubtreeIds(allCategoryRows(), filterCategory) : new Set([filterCategory])
+        rows = rows.filter((r) => ids.has(String(r.category_id)))
+      }
       return send(res, 200, rows.map(adminProductOut))
+    }
+    // Batch sort save: the admin list edits sort values inline and
+    // submits only the rows that changed; one transaction, so a
+    // failure never leaves a half-ordered catalogue.
+    if (path === '/api/admin/products/sort' && req.method === 'POST') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
+      const body = await readBody(req)
+      if (!Array.isArray(body.items)) return send(res, 400, { error: 'items must be an array of {id, sort}' })
+      const upd = db.prepare('UPDATE products SET sort = ? WHERE id = ?')
+      let updated = 0
+      db.exec('BEGIN')
+      try {
+        for (const it of body.items) {
+          const id = Math.trunc(Number(it && it.id))
+          if (!Number.isFinite(id) || id <= 0) continue
+          if (upd.run(Math.trunc(Number(it.sort) || 0), id).changes) updated++
+        }
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
+      }
+      return send(res, 200, { ok: true, updated })
     }
     if (path === '/api/admin/products' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
@@ -2169,8 +2485,36 @@ const server = createServer(async (req, res) => {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products GROUP BY category_id').all()
       const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
-      const rows = db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
-      return send(res, 200, rows.map((c) => ({ id: c.id, names: parseJsonCol(c.names, {}), sort: c.sort, count: byId[c.id] || 0 })))
+      const rows = allCategoryRows()
+      const byCat = new Map(rows.map((c) => [String(c.id), c]))
+      const nameOf = (c) => pickLang(c.names, 'zh') || pickLang(c.names, 'en') || String(c.id)
+      return send(res, 200, rows.map((c) => {
+        // count = products in this category AND all its descendants
+        // (hidden products included, like the Java counts(false)) —
+        // the same subtree set the admin product list filters by with
+        // includeChildren, so the number matches the click-through.
+        let count = 0
+        for (const sid of categorySubtreeIds(rows, c.id)) count += byId[sid] || 0
+        const chain = []
+        let cur = c
+        const seen = new Set()
+        while (cur) {
+          chain.unshift(nameOf(cur))
+          const p = String(cur.parent_id || '')
+          if (!p || seen.has(p)) break
+          seen.add(p)
+          cur = byCat.get(p)
+        }
+        return {
+          id: c.id,
+          parentId: String(c.parent_id || ''),
+          level: categoryLevel(rows, c.id),
+          pathName: chain.join(' / '),
+          names: parseJsonCol(c.names, {}),
+          sort: c.sort,
+          count
+        }
+      }))
     }
     if (path === '/api/admin/categories' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
@@ -2181,26 +2525,42 @@ const server = createServer(async (req, res) => {
       if (id && !/^[a-zA-Z0-9_-]+$/.test(id)) return send(res, 400, { error: 'category id may only contain letters, digits, - and _' })
       if (!id) id = 'c' + Date.now().toString(36)
       if (db.prepare('SELECT id FROM categories WHERE id = ?').get(id)) return send(res, 400, { error: 'category id already exists' })
+      const parentId = String(body.parentId || '').trim()
+      const parentError = validateCategoryParent(allCategoryRows(), id, parentId)
+      if (parentError) return send(res, 400, { error: parentError })
       const sort = Math.trunc(Number(body.sort) || 0)
-      db.prepare('INSERT INTO categories (id, names, sort) VALUES (?, ?, ?)').run(id, JSON.stringify(names), sort)
-      return send(res, 201, { id, names, sort, count: 0 })
+      db.prepare('INSERT INTO categories (id, parent_id, names, sort) VALUES (?, ?, ?, ?)').run(id, parentId, JSON.stringify(names), sort)
+      return send(res, 201, { id, parentId, names, sort, count: 0 })
     }
     const adminCategoryMatch = path.match(/^\/api\/admin\/categories\/([^/]+)$/)
     if (adminCategoryMatch && req.method === 'PUT') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const id = decodeURIComponent(adminCategoryMatch[1])
-      if (!db.prepare('SELECT id FROM categories WHERE id = ?').get(id)) return send(res, 404, { error: 'category not found' })
+      const existing = db.prepare('SELECT * FROM categories WHERE id = ?').get(id)
+      if (!existing) return send(res, 404, { error: 'category not found' })
       const body = await readBody(req)
       const names = body.names && typeof body.names === 'object' ? body.names : {}
       if (!String(names.en || names.zh || '').trim()) return send(res, 400, { error: 'category name (English) is required' })
+      const rows = allCategoryRows()
+      const parentId = Object.prototype.hasOwnProperty.call(body, 'parentId')
+        ? String(body.parentId || '').trim()
+        : String(existing.parent_id || '')
+      const parentError = validateCategoryParent(rows, id, parentId)
+      if (parentError) return send(res, 400, { error: parentError })
       const sort = Math.trunc(Number(body.sort) || 0)
-      db.prepare('UPDATE categories SET names = ?, sort = ? WHERE id = ?').run(JSON.stringify(names), sort, id)
-      const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE category_id = ?').get(id)
-      return send(res, 200, { id, names, sort, count: n })
+      db.prepare('UPDATE categories SET names = ?, sort = ?, parent_id = ? WHERE id = ?').run(JSON.stringify(names), sort, parentId, id)
+      const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products GROUP BY category_id').all()
+      const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
+      let count = 0
+      const fresh = allCategoryRows()
+      for (const sid of categorySubtreeIds(fresh, id)) count += byId[sid] || 0
+      return send(res, 200, { id, parentId, names, sort, count })
     }
     if (adminCategoryMatch && req.method === 'DELETE') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const id = decodeURIComponent(adminCategoryMatch[1])
+      const kids = db.prepare('SELECT COUNT(*) AS n FROM categories WHERE parent_id = ?').get(id)
+      if (kids.n > 0) return send(res, 400, { error: `category still has ${kids.n} sub-categories; move or delete them first` })
       const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE category_id = ?').get(id)
       if (n > 0) return send(res, 400, { error: `category still has ${n} product(s); move or delete them first` })
       db.prepare('DELETE FROM categories WHERE id = ?').run(id)
@@ -2244,6 +2604,52 @@ const server = createServer(async (req, res) => {
       const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE brand_id = ?').get(id)
       if (n > 0) return send(res, 400, { error: `brand still has ${n} product(s); reassign or delete them first` })
       db.prepare('DELETE FROM brands WHERE id = ?').run(id)
+      return send(res, 200, { ok: true })
+    }
+
+    // ---- Admin: custom page management (perm: config) ----
+    if (path === '/api/admin/pages' && req.method === 'GET') {
+      const rows = db.prepare('SELECT * FROM custom_pages ORDER BY sort, id').all()
+      return send(res, 200, rows.map(customPageOut))
+    }
+    if (path === '/api/admin/pages' && req.method === 'POST') {
+      const body = await readBody(req)
+      const page = sanitizeCustomPage(body)
+      if (!CUSTOM_PAGE_SLUG_RE.test(page.slug)) {
+        return send(res, 400, { error: 'slug must be 2-61 chars: lowercase letters, digits and hyphens, starting with a letter or digit' })
+      }
+      if (!Object.values(page.titles).some((v) => String(v || '').trim())) {
+        return send(res, 400, { error: 'page title is required (at least one language)' })
+      }
+      if (db.prepare('SELECT id FROM custom_pages WHERE slug = ?').get(page.slug)) {
+        return send(res, 400, { error: `slug already exists: ${page.slug}` })
+      }
+      const info = db.prepare('INSERT INTO custom_pages (slug, titles, sections, gallery, enabled, sort, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString())
+      return send(res, 201, customPageOut(db.prepare('SELECT * FROM custom_pages WHERE id = ?').get(Number(info.lastInsertRowid))))
+    }
+    const adminPageMatch = path.match(/^\/api\/admin\/pages\/(\d+)$/)
+    if (adminPageMatch && req.method === 'PUT') {
+      const id = Number(adminPageMatch[1])
+      if (!db.prepare('SELECT id FROM custom_pages WHERE id = ?').get(id)) return send(res, 404, { error: 'page not found' })
+      const body = await readBody(req)
+      const page = sanitizeCustomPage(body)
+      if (!CUSTOM_PAGE_SLUG_RE.test(page.slug)) {
+        return send(res, 400, { error: 'slug must be 2-61 chars: lowercase letters, digits and hyphens, starting with a letter or digit' })
+      }
+      if (!Object.values(page.titles).some((v) => String(v || '').trim())) {
+        return send(res, 400, { error: 'page title is required (at least one language)' })
+      }
+      const clash = db.prepare('SELECT id FROM custom_pages WHERE slug = ? AND id != ?').get(page.slug, id)
+      if (clash) return send(res, 400, { error: `slug already exists: ${page.slug}` })
+      db.prepare('UPDATE custom_pages SET slug = ?, titles = ?, sections = ?, gallery = ?, enabled = ?, sort = ?, updated_at = ? WHERE id = ?')
+        .run(page.slug, JSON.stringify(page.titles), JSON.stringify(page.sections), JSON.stringify(page.gallery), page.enabled ? 1 : 0, page.sort, new Date().toISOString(), id)
+      return send(res, 200, customPageOut(db.prepare('SELECT * FROM custom_pages WHERE id = ?').get(id)))
+    }
+    if (adminPageMatch && req.method === 'DELETE') {
+      const id = Number(adminPageMatch[1])
+      if (!db.prepare('SELECT id FROM custom_pages WHERE id = ?').get(id)) return send(res, 404, { error: 'page not found' })
+      db.prepare('DELETE FROM custom_pages WHERE id = ?').run(id)
       return send(res, 200, { ok: true })
     }
 

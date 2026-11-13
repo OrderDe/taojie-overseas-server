@@ -85,6 +85,14 @@ public class OverseasChatSession implements Serializable {
     /** open / closed (a visitor message re-opens a closed session). */
     private String status;
 
+    /**
+     * Product snapshot the visitor is asking about, as a JSON string
+     * ({id, name, image, priceLabel, negotiable}). Set when the visitor
+     * taps 询价 on a product and the chat opens with it attached; empty
+     * when no product is attached.
+     */
+    private String product;
+
     private Date lastMsgAt;
 
     private Date createTime;

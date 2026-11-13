@@ -73,4 +73,7 @@ public class ChatSessionResponse implements Serializable {
     private Boolean visitorTyping;
 
     private Boolean agentTyping;
+
+    /** Product the visitor is asking about (null when none attached). */
+    private ChatProductResponse product;
 }
