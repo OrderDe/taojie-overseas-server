@@ -169,10 +169,24 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
 
     @Override
     public List<AdminProductResponse> listForAdmin() {
-        return list(new LambdaQueryWrapper<OverseasProduct>()
+        return listForAdmin(null, false);
+    }
+
+    @Override
+    public List<AdminProductResponse> listForAdmin(String categoryId, boolean includeChildren) {
+        LambdaQueryWrapper<OverseasProduct> wrapper = new LambdaQueryWrapper<OverseasProduct>()
                 .orderByDesc(OverseasProduct::getSort)
-                .orderByDesc(OverseasProduct::getId))
-                .stream().map(this::toAdminResponse).collect(Collectors.toList());
+                .orderByDesc(OverseasProduct::getId);
+        if (categoryId != null && !categoryId.isBlank()) {
+            if (includeChildren) {
+                // Same subtree set as the category counts, so the
+                // filtered total always matches the category page.
+                wrapper.in(OverseasProduct::getCategoryId, categoryService.subtreeIds(categoryId));
+            } else {
+                wrapper.eq(OverseasProduct::getCategoryId, categoryId);
+            }
+        }
+        return list(wrapper).stream().map(this::toAdminResponse).collect(Collectors.toList());
     }
 
     // Batch sort save: one transaction for the whole batch, so a

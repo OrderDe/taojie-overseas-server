@@ -31,6 +31,13 @@ public interface OverseasProductService extends IService<OverseasProduct> {
     /** All products for the admin UI (hidden ones included), sort desc / id desc. */
     List<AdminProductResponse> listForAdmin();
 
+    /**
+     * Admin list filtered by category: exact category, or the whole
+     * subtree when includeChildren is set — the same subtree set the
+     * category list's product count is computed from.
+     */
+    List<AdminProductResponse> listForAdmin(String categoryId, boolean includeChildren);
+
     /** Batch-update sort values in one transaction; returns how many rows changed. */
     int updateSorts(ProductSortRequest request);
 

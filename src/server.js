@@ -226,6 +226,10 @@ try { db.exec("ALTER TABLE products ADD COLUMN video TEXT NOT NULL DEFAULT ''") 
 // "price on request" (面议), after which the storefront shows no numeric
 // price and the product can only be enquired about, never carted.
 try { db.exec('ALTER TABLE products ADD COLUMN negotiable INTEGER NOT NULL DEFAULT 0') } catch { /* already there */ }
+// Categories gained a hierarchy (parent_id, '' = top level, max 3
+// levels) to mirror the Java backend's category tree; older databases
+// gain the column here and every existing category stays top level.
+try { db.exec("ALTER TABLE categories ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''") } catch { /* already there */ }
 // Chat sessions gained a visitor profile (geo/device/UA), presence
 // (last_seen), typing + read watermarks, an internal note and a lifecycle
 // status when the chat grew into a small support console. Add in place.
@@ -732,6 +736,76 @@ function sanitizeFooterColumns(raw) {
           categoryId: typeof l.categoryId === 'string' ? l.categoryId.trim().slice(0, 100) : ''
         }))
     }))
+}
+
+// ---- Category hierarchy (Node mirror of the Java CategoryHierarchy) ----
+// Categories form a tree up to 3 levels deep via parent_id ('' = top
+// level). The admin category list's "含下级" count and the admin
+// product list's includeChildren filter MUST share one definition of
+// "this category plus all its descendants" — both go through
+// categorySubtreeIds below, exactly like the Java side shares
+// OverseasCategoryService.subtreeIds, so the number an admin sees on
+// the category page always equals the total behind the click.
+function allCategoryRows() {
+  return db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
+}
+function categorySubtreeIds(rows, id) {
+  const children = new Map()
+  for (const r of rows) {
+    const p = String(r.parent_id || '')
+    if (!children.has(p)) children.set(p, [])
+    children.get(p).push(String(r.id))
+  }
+  const out = new Set([String(id)])
+  const queue = [String(id)]
+  while (queue.length) {
+    const cur = queue.shift()
+    for (const kid of children.get(cur) || []) {
+      if (!out.has(kid)) { out.add(kid); queue.push(kid) }
+    }
+  }
+  return out
+}
+function categoryLevel(rows, id) {
+  const byId = new Map(rows.map((r) => [String(r.id), r]))
+  let level = 0
+  let cur = byId.get(String(id))
+  const seen = new Set()
+  while (cur) {
+    level++
+    const p = String(cur.parent_id || '')
+    if (!p || seen.has(p)) break
+    seen.add(p)
+    cur = byId.get(p)
+  }
+  return level
+}
+function categorySubtreeHeight(rows, id, depth = 0) {
+  if (depth > 10) return 0
+  const kids = rows.filter((r) => String(r.parent_id || '') === String(id))
+  if (!kids.length) return 0
+  return 1 + Math.max(...kids.map((k) => categorySubtreeHeight(rows, k.id, depth + 1)))
+}
+// Returns an error message when the (re)parenting is invalid, else
+// null: the parent must exist, a category cannot sit under itself or
+// its own descendant, and the resulting tree stays within 3 levels.
+function validateCategoryParent(rows, id, parentId) {
+  if (!parentId) return null
+  const byId = new Map(rows.map((r) => [String(r.id), r]))
+  if (!byId.has(parentId)) return 'parent category not found'
+  if (parentId === String(id)) return 'a category cannot be its own parent'
+  let cur = byId.get(parentId)
+  const seen = new Set()
+  while (cur) {
+    if (String(cur.id) === String(id)) return 'cannot move a category under its own descendant'
+    const p = String(cur.parent_id || '')
+    if (!p || seen.has(p)) break
+    seen.add(p)
+    cur = byId.get(p)
+  }
+  const height = id && byId.has(String(id)) ? categorySubtreeHeight(rows, id) : 0
+  if (categoryLevel(rows, parentId) + 1 + height > 3) return 'categories support at most 3 levels'
+  return null
 }
 
 // ---- Custom pages (admin-authored standalone pages the nav can point to) ----
@@ -1664,10 +1738,16 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/categories') {
-      const rows = db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
+      const rows = allCategoryRows()
       const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products WHERE active = 1 GROUP BY category_id').all()
       const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
-      return send(res, 200, rows.map((c) => ({ id: c.id, name: pickLang(c.names, lang), count: byId[c.id] || 0 })))
+      // count covers the whole subtree (visible products), matching
+      // the Java backend; parentId lets the storefront group the tree.
+      return send(res, 200, rows.map((c) => {
+        let count = 0
+        for (const sid of categorySubtreeIds(rows, c.id)) count += byId[sid] || 0
+        return { id: c.id, parentId: String(c.parent_id || ''), name: pickLang(c.names, lang), count }
+      }))
     }
 
     if (req.method === 'GET' && path === '/api/products') {
@@ -2307,7 +2387,17 @@ const server = createServer(async (req, res) => {
     // ---- Admin: product management ----
     if (path === '/api/admin/products' && req.method === 'GET') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
-      const rows = db.prepare('SELECT * FROM products ORDER BY sort DESC, id DESC').all()
+      let rows = db.prepare('SELECT * FROM products ORDER BY sort DESC, id DESC').all()
+      // Optional category filter: exact category by default; with
+      // includeChildren=1 the filter covers the category's whole
+      // subtree — the same categorySubtreeIds set the category list's
+      // product count is computed from.
+      const filterCategory = url.searchParams.get('categoryId') || ''
+      if (filterCategory) {
+        const includeChildren = ['1', 'true'].includes((url.searchParams.get('includeChildren') || '').toLowerCase())
+        const ids = includeChildren ? categorySubtreeIds(allCategoryRows(), filterCategory) : new Set([filterCategory])
+        rows = rows.filter((r) => ids.has(String(r.category_id)))
+      }
       return send(res, 200, rows.map(adminProductOut))
     }
     // Batch sort save: the admin list edits sort values inline and
@@ -2367,8 +2457,36 @@ const server = createServer(async (req, res) => {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products GROUP BY category_id').all()
       const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
-      const rows = db.prepare('SELECT * FROM categories ORDER BY sort, id').all()
-      return send(res, 200, rows.map((c) => ({ id: c.id, names: parseJsonCol(c.names, {}), sort: c.sort, count: byId[c.id] || 0 })))
+      const rows = allCategoryRows()
+      const byCat = new Map(rows.map((c) => [String(c.id), c]))
+      const nameOf = (c) => pickLang(c.names, 'zh') || pickLang(c.names, 'en') || String(c.id)
+      return send(res, 200, rows.map((c) => {
+        // count = products in this category AND all its descendants
+        // (hidden products included, like the Java counts(false)) —
+        // the same subtree set the admin product list filters by with
+        // includeChildren, so the number matches the click-through.
+        let count = 0
+        for (const sid of categorySubtreeIds(rows, c.id)) count += byId[sid] || 0
+        const chain = []
+        let cur = c
+        const seen = new Set()
+        while (cur) {
+          chain.unshift(nameOf(cur))
+          const p = String(cur.parent_id || '')
+          if (!p || seen.has(p)) break
+          seen.add(p)
+          cur = byCat.get(p)
+        }
+        return {
+          id: c.id,
+          parentId: String(c.parent_id || ''),
+          level: categoryLevel(rows, c.id),
+          pathName: chain.join(' / '),
+          names: parseJsonCol(c.names, {}),
+          sort: c.sort,
+          count
+        }
+      }))
     }
     if (path === '/api/admin/categories' && req.method === 'POST') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
@@ -2379,26 +2497,42 @@ const server = createServer(async (req, res) => {
       if (id && !/^[a-zA-Z0-9_-]+$/.test(id)) return send(res, 400, { error: 'category id may only contain letters, digits, - and _' })
       if (!id) id = 'c' + Date.now().toString(36)
       if (db.prepare('SELECT id FROM categories WHERE id = ?').get(id)) return send(res, 400, { error: 'category id already exists' })
+      const parentId = String(body.parentId || '').trim()
+      const parentError = validateCategoryParent(allCategoryRows(), id, parentId)
+      if (parentError) return send(res, 400, { error: parentError })
       const sort = Math.trunc(Number(body.sort) || 0)
-      db.prepare('INSERT INTO categories (id, names, sort) VALUES (?, ?, ?)').run(id, JSON.stringify(names), sort)
-      return send(res, 201, { id, names, sort, count: 0 })
+      db.prepare('INSERT INTO categories (id, parent_id, names, sort) VALUES (?, ?, ?, ?)').run(id, parentId, JSON.stringify(names), sort)
+      return send(res, 201, { id, parentId, names, sort, count: 0 })
     }
     const adminCategoryMatch = path.match(/^\/api\/admin\/categories\/([^/]+)$/)
     if (adminCategoryMatch && req.method === 'PUT') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const id = decodeURIComponent(adminCategoryMatch[1])
-      if (!db.prepare('SELECT id FROM categories WHERE id = ?').get(id)) return send(res, 404, { error: 'category not found' })
+      const existing = db.prepare('SELECT * FROM categories WHERE id = ?').get(id)
+      if (!existing) return send(res, 404, { error: 'category not found' })
       const body = await readBody(req)
       const names = body.names && typeof body.names === 'object' ? body.names : {}
       if (!String(names.en || names.zh || '').trim()) return send(res, 400, { error: 'category name (English) is required' })
+      const rows = allCategoryRows()
+      const parentId = Object.prototype.hasOwnProperty.call(body, 'parentId')
+        ? String(body.parentId || '').trim()
+        : String(existing.parent_id || '')
+      const parentError = validateCategoryParent(rows, id, parentId)
+      if (parentError) return send(res, 400, { error: parentError })
       const sort = Math.trunc(Number(body.sort) || 0)
-      db.prepare('UPDATE categories SET names = ?, sort = ? WHERE id = ?').run(JSON.stringify(names), sort, id)
-      const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE category_id = ?').get(id)
-      return send(res, 200, { id, names, sort, count: n })
+      db.prepare('UPDATE categories SET names = ?, sort = ?, parent_id = ? WHERE id = ?').run(JSON.stringify(names), sort, parentId, id)
+      const counts = db.prepare('SELECT category_id, COUNT(*) AS n FROM products GROUP BY category_id').all()
+      const byId = Object.fromEntries(counts.map((r) => [r.category_id, r.n]))
+      let count = 0
+      const fresh = allCategoryRows()
+      for (const sid of categorySubtreeIds(fresh, id)) count += byId[sid] || 0
+      return send(res, 200, { id, parentId, names, sort, count })
     }
     if (adminCategoryMatch && req.method === 'DELETE') {
       if (!isAdmin(req)) return send(res, 401, { error: 'admin token required' })
       const id = decodeURIComponent(adminCategoryMatch[1])
+      const kids = db.prepare('SELECT COUNT(*) AS n FROM categories WHERE parent_id = ?').get(id)
+      if (kids.n > 0) return send(res, 400, { error: `category still has ${kids.n} sub-categories; move or delete them first` })
       const { n } = db.prepare('SELECT COUNT(*) AS n FROM products WHERE category_id = ?').get(id)
       if (n > 0) return send(res, 400, { error: `category still has ${n} product(s); move or delete them first` })
       db.prepare('DELETE FROM categories WHERE id = ?').run(id)

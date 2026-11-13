@@ -68,10 +68,12 @@ public class OverseasAdminController {
 
     // ---- products ----
 
-    @Operation(summary = "管理端：全部商品（含下架）")
+    @Operation(summary = "管理端：全部商品（含下架），可按分类筛选（includeChildren 时含全部下级分类）")
     @GetMapping("/products")
-    public CommonResult<List<AdminProductResponse>> products() {
-        return CommonResult.success(productService.listForAdmin());
+    public CommonResult<List<AdminProductResponse>> products(
+            @RequestParam(required = false) String categoryId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeChildren) {
+        return CommonResult.success(productService.listForAdmin(categoryId, includeChildren));
     }
 
     @Operation(summary = "管理端：商品批量排序（一次事务更新多件商品的排序值）")
