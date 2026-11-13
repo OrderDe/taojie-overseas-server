@@ -36,6 +36,9 @@ public class SiteConfigRequest {
     @Schema(description = "是否显示购物车和订单入口（缺省为关，询盘站定位）")
     private Boolean showCart;
 
+    @Schema(description = "是否显示商品价格（缺省为开；关掉后全站商品按面议展示、不显示价格、不能加购）")
+    private Boolean showPrices;
+
     @Schema(description = "是否显示首页『成为经销商』卡片（缺省为关）")
     private Boolean showDealer;
 

@@ -34,6 +34,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("announcement", "");
         DEFAULTS.put("showRfq", true);
         DEFAULTS.put("showCart", false);
+        DEFAULTS.put("showPrices", true);
         DEFAULTS.put("showDealer", false);
         DEFAULTS.put("showContact", true);
         DEFAULTS.put("whatsapp", "");
@@ -370,6 +371,9 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if (request.getShowCart() != null) {
             put("showCart", String.valueOf(request.getShowCart()));
         }
+        if (request.getShowPrices() != null) {
+            put("showPrices", String.valueOf(request.getShowPrices()));
+        }
         if (request.getShowDealer() != null) {
             put("showDealer", String.valueOf(request.getShowDealer()));
         }
@@ -402,7 +406,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
     }
 
     private Object parseValue(String key, String value) {
-        if ("navigationConfigured".equals(key) || "showRfq".equals(key) || "showCart".equals(key) || "showDealer".equals(key) || "showContact".equals(key)) {
+        if ("navigationConfigured".equals(key) || "showRfq".equals(key) || "showCart".equals(key) || "showPrices".equals(key) || "showDealer".equals(key) || "showContact".equals(key)) {
             return Boolean.parseBoolean(value);
         }
         if ("navItems".equals(key)) {

@@ -428,7 +428,7 @@ try {
 
 const DEFAULT_CONFIG = {
   defaultTheme: 'h', defaultLanguage: 'en', heroTitle: '', heroSubtitle: '',
-  announcement: '', showRfq: true, showCart: false, showDealer: false, showContact: true, whatsapp: '', email: '', currency: 'USD',
+  announcement: '', showRfq: true, showCart: false, showPrices: true, showDealer: false, showContact: true, whatsapp: '', email: '', currency: 'USD',
   baseCurrency: 'CNY', // currency the stored product prices are in; the storefront converts for display
   logo: '', // header logo image URL; empty = storefront shows the text store name
   // Homepage content blocks (admin-editable; empty = storefront falls back
