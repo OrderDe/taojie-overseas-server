@@ -9,13 +9,18 @@
 // company's own public storefront (williscarpaint.com): 10 collections
 // and every product in them, shaped as
 //   { categories: [{slug, nameEn, nameZh}],
-//     products:   [{slug, title, categorySlug, image, blurb}] }
+//     products:   [{slug, title, categorySlug, image, blurb,
+//                   specs: {ordered key/value attributes}}] }
 //
-// Idempotency: the WILLIS brand and the 10 categories are matched by
-// their English name (names.en), products by source_id 'willis:<slug>';
-// anything already present is skipped, so re-running is safe. All
-// inserts run in a single transaction. src/server.js runs this same
-// import automatically on startup when no willis products exist yet.
+// Upsert semantics: the WILLIS brand and the 10 categories are matched
+// by their English name (names.en), products by source_id
+// 'willis:<slug>'; missing rows are inserted, present rows whose
+// scraped fields changed are updated in place, identical rows are
+// skipped — so re-running is safe and catalogue refreshes (e.g. the
+// product spec tables) reach existing databases. All writes run in a
+// single transaction. src/server.js runs this same upsert on startup
+// whenever the bundled file's hash differs from the hash stored in
+// the site config (key willisImportHash).
 //
 // Java/MySQL deployments: this tool only targets the Node/SQLite stack.
 // For the Java twin, generate the equivalent INSERTs from the same
@@ -145,24 +150,42 @@ export function importIntoDb(db, catalog) {
 
     // Products: matched by source_id 'willis:<slug>'. Prices stay 0 and
     // negotiable = 1 (price on request), mirroring the source storefront
-    // which shows no public prices.
+    // which shows no public prices. Existing rows are updated when the
+    // scraped fields (names / category / brand / image / blurb / specs)
+    // changed, so a refreshed catalogue enriches products already in
+    // the database instead of being skipped wholesale.
     const insP = db.prepare(`INSERT INTO products
       (source_id, category_id, brand_id, names, price, ot_price, negotiable, sales, unit, moq, image, video, tag, blurb, specs, sort, active)
-      VALUES (?, ?, ?, ?, 0, 0, 1, 0, '', 0, ?, '', '', ?, '{}', 0, 1)`)
-    let prodInserted = 0, prodSkipped = 0, prodNoCategory = 0
+      VALUES (?, ?, ?, ?, 0, 0, 1, 0, '', 0, ?, '', '', ?, ?, 0, 1)`)
+    const updP = db.prepare(`UPDATE products
+      SET category_id = ?, brand_id = ?, names = ?, image = ?, blurb = ?, specs = ?
+      WHERE id = ?`)
+    const getP = db.prepare('SELECT id, category_id, brand_id, names, image, blurb, specs FROM products WHERE source_id = ?')
+    let prodInserted = 0, prodUpdated = 0, prodSkipped = 0, prodNoCategory = 0
     for (const p of catalog.products) {
       const sourceId = `willis:${p.slug}`
-      if (db.prepare('SELECT id FROM products WHERE source_id = ?').get(sourceId)) {
+      const categoryId = categoryIdBySlug[p.categorySlug] || ''
+      if (!categoryId) prodNoCategory++
+      const names = JSON.stringify({ en: p.title || p.slug })
+      const image = String(p.image || '')
+      const blurb = String(p.blurb || '')
+      const specs = JSON.stringify(p.specs && typeof p.specs === 'object' ? p.specs : {})
+      const existing = getP.get(sourceId)
+      if (!existing) {
+        insP.run(sourceId, categoryId, brandId, names, image, blurb, specs)
+        prodInserted++
+        continue
+      }
+      if (existing.category_id === categoryId && existing.brand_id === brandId &&
+          existing.names === names && existing.image === image &&
+          existing.blurb === blurb && existing.specs === specs) {
         prodSkipped++
         continue
       }
-      const categoryId = categoryIdBySlug[p.categorySlug] || ''
-      if (!categoryId) prodNoCategory++
-      insP.run(sourceId, categoryId, brandId, JSON.stringify({ en: p.title || p.slug }),
-        String(p.image || ''), String(p.blurb || ''))
-      prodInserted++
+      updP.run(categoryId, brandId, names, image, blurb, specs, existing.id)
+      prodUpdated++
     }
-    results.push(`products: inserted ${prodInserted}, skipped ${prodSkipped} (already present)` +
+    results.push(`products: inserted ${prodInserted}, updated ${prodUpdated}, skipped ${prodSkipped} (unchanged)` +
       (prodNoCategory ? `, ${prodNoCategory} without a category` : ''))
     db.exec('COMMIT')
   } catch (e) {

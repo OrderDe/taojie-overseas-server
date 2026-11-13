@@ -49,7 +49,7 @@
 
 import { createServer } from 'node:http'
 import { DatabaseSync } from 'node:sqlite'
-import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { scryptSync, randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, extname, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -376,26 +376,35 @@ try {
   console.error('sfsy formula auto-import skipped:', e.message)
 }
 
-// Willis catalogue first boot: when no willis-sourced products exist yet
-// and the repo carries the scraped catalogue (data/willis_catalog.json),
-// import it automatically — the same code path as
-// `node tools/import-willis.js`. Rows land as real brand / category /
-// product records (admin-manageable, storefront-linked); brand,
-// categories and products are deduped by name / source_id, so restarts
-// never duplicate. Any failure is logged and never blocks startup.
+// Willis catalogue sync: the bundled scrape (data/willis_catalog.json)
+// is upserted on startup whenever its content hash differs from the
+// hash kept in the site config (key willisImportHash) — so catalogue
+// updates shipped with the code (e.g. richer product specs) also reach
+// databases that already hold willis rows, while unchanged restarts
+// never touch the products table. Same code path as
+// `node tools/import-willis.js`; rows land as real brand / category /
+// product records (admin-manageable, storefront-linked), deduped by
+// name / source_id. Any failure is logged and never blocks startup.
 try {
-  const { n } = db.prepare("SELECT COUNT(*) AS n FROM products WHERE source_id LIKE 'willis:%'").get()
-  if (Number(n) === 0) {
-    const tool = await import(pathToFileURL(join(ROOT, 'tools', 'import-willis.js')).href)
-    const file = tool.findBundledDataFile(ROOT)
-    if (file) {
+  const tool = await import(pathToFileURL(join(ROOT, 'tools', 'import-willis.js')).href)
+  const file = tool.findBundledDataFile(ROOT)
+  if (file) {
+    const hash = createHash('sha256').update(readFileSync(file)).digest('hex')
+    const row = db.prepare('SELECT data FROM site_config WHERE id = 1').get()
+    let stored = {}
+    try { stored = row ? JSON.parse(row.data) : {} } catch { stored = {} }
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) stored = {}
+    if (stored.willisImportHash !== hash) {
       const results = tool.importIntoDb(db, tool.loadCatalog(file))
-      console.log(`willis catalogue auto-imported from ${basename(file)}:`)
+      console.log(`willis catalogue synced from ${basename(file)}:`)
       for (const line of results) console.log(`  ${line}`)
+      stored.willisImportHash = hash
+      db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
+        .run(JSON.stringify(stored))
     }
   }
 } catch (e) {
-  console.error('willis catalogue auto-import skipped:', e.message)
+  console.error('willis catalogue sync skipped:', e.message)
 }
 
 const DEFAULT_CONFIG = {
@@ -418,15 +427,18 @@ const DEFAULT_CONFIG = {
   // an iframe; 'custom' renders profileContent natively (see below).
   profileMode: 'embed',
   // Custom company-profile content, authored in the admin: a hero image
-  // carousel, free-form sections (title/body/bullets, each a
-  // {lang: text} map like product names) and a photo gallery. The PUT
+  // carousel, free-form sections (title/body/bullets/optional image,
+  // each text a {lang: text} map like product names), a photo gallery,
+  // FAQ entries and customer testimonials. The PUT
   // handler shape-guards it (sanitizeProfileContent), so the storefront
   // can render whatever is stored without defensive checks.
-  // The default below is the WILLIS / Meishicai company profile taken
-  // from williscarpaint.com's About page (Shaoguan Xinyue Chemical Co.,
-  // Ltd, zh+en) so the page is fully populated — and editable in the
-  // admin 「公司简介」 page — from day one; any config saved from the
-  // admin replaces it wholesale.
+  // The default below is the full WILLIS / Meishicai company profile
+  // taken from williscarpaint.com (homepage About Us / Support &
+  // Services / OUR FACTORY / FAQ / customer comments, plus the About
+  // page's product lineup, ISO and technical-team copy; Guangdong
+  // Meishicai Auto Paint Co., Ltd, zh+en) so the page is fully
+  // populated — and editable in the admin 「公司简介」 page — from
+  // day one; any config saved from the admin replaces it wholesale.
   profileContent: {
     heroImages: [
       'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779616076263.jpg',
@@ -437,19 +449,14 @@ const DEFAULT_CONFIG = {
     ],
     sections: [
       {
-        title: { zh: '关于美诗彩', en: 'About Meishicai' },
-        body: {
-          zh: '公司位于广东省韶关市翁源县（韶关新粤化工有限公司），是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。',
-          en: 'Nestled in the pleasant surroundings of Shaoguan City — Wengyuan County, Shaoguan, Guangdong Province, China (Shaoguan Xinyue Chemical Co., Ltd) — we are a modern technological enterprise specializing in the R&D, production, sales and import & export trade of automotive coatings and industrial coatings. We boast over 15 years of global export experience.'
-        },
-        bullets: []
+        title: { zh: '关于我们', en: 'About Us' },
+        body: { zh: '广东美诗彩汽车漆有限公司位于广东省韶关市，环境优雅，是一家专注于汽车涂料与工业涂料研发、生产、销售及进出口贸易的现代化科技企业，拥有 15 年以上的全球出口经验。\n\n公司拥有先进的设备、高效的检测体系以及完善的售后服务体系，确保产品与服务的品质。\n\n公司已通过 ISO9001 国际质量管理体系认证与 ISO14001 国际环境管理体系认证，是汽车涂料与工业涂料领域的大型专业制造商。\n\n我们拥有一支在该领域拥有 15 年以上经验的专业技术团队，欢迎世界各地的客户访问我们的网站，如有任何需求请随时告知，我们期待为您提供优质的服务。', en: 'Guangdong Meishicai auto paint Co., LTD. located in the elegant environment of Guangdong Province, Shaoguan City, we are a modern technology enterprise specializing in the research and development, production, sales, import and export trade of automotive coatings and industrial coatings, and has over 15 years of experience in exporting worldwide.\n\nWe have advanced equipment, effective testing systems, and a comprehensive after-sales service system to ensure the quality of our products and services.\n\nWe have obtained ISO9001 international quality management system certification and ISO14001 international environmental management agency certification. We are a large professional manufacturer of automotive coatings and industrial coatings.\n\nWe have professional technician team all in this area more than 15 years, welcome customers from all over the world visit our website, and inform us if you have any needs, we are looking forward to give you excellent service.' },
+        bullets: [],
+        image: ''
       },
       {
         title: { zh: '产品系列', en: 'Product Lineup' },
-        body: {
-          zh: '公司主营产品包括清漆、固化剂、稀释剂、1K 与 2K 素色漆、1K 珍珠漆、1K 水晶珍珠漆、1K 银粉漆、原子灰、1K 与 2K 底漆及其他辅料。',
-          en: 'Our main product lineup includes clear coats, hardeners, thinners, 1K & 2K solid color paints, 1K pearl paints, 1K crystal pearl paints, 1K silver paints, body filler, 1K & 2K primers and other auxiliary materials.'
-        },
+        body: { zh: '公司主营产品包括清漆、固化剂、稀释剂、1K 与 2K 素色漆、1K 珍珠漆、1K 水晶珍珠漆、1K 银粉漆、原子灰、1K 与 2K 底漆及其他辅料。', en: 'Our main product lineup includes clear coats, hardeners, thinners, 1K & 2K solid color paints, 1K pearl paints, 1K crystal pearl paints, 1K silver paints, body filler, 1K & 2K primers and other auxiliary materials.' },
         bullets: [
           { zh: '清漆', en: 'Clear coat' },
           { zh: '固化剂', en: 'Hardener' },
@@ -459,26 +466,38 @@ const DEFAULT_CONFIG = {
           { zh: '1K 银粉漆', en: '1K silver paints' },
           { zh: '原子灰', en: 'Body filler' },
           { zh: '1K 与 2K 底漆', en: '1K & 2K primers' }
-        ]
+        ],
+        image: ''
+      },
+      {
+        title: { zh: '出口市场与服务', en: 'Support & Services' },
+        body: { zh: '我们的产品出口到欧洲、美国、韩国、日本、中东、非洲及世界各地，并已与众多合作伙伴建立了长期、稳定的合作关系。我们可以提供 OEM/ODM 服务，欢迎定制设计。我们坚信，严格的质量控制与卓越的服务，是支撑我们不断走得更远、最终实现目标的精神所在。', en: 'We export products to Europe, the USA, South Korea, Japan, the Middle East, Africa and all around the world. We have already established long, stable relationships with many cooperative partners. We can offer OEM/ODM services. Custom design is welcome. We do believe that strict quality control and remarkable service is the spirit to keep us running further and further, and finally realize our goals.' },
+        bullets: [
+          { zh: '交期可协商：3–7 天', en: 'Negotiate the delivery time: 3-7 days' },
+          { zh: '专业售后团队，24 小时服务', en: 'Professional after-sales team, 24H service' }
+        ],
+        image: ''
       },
       {
         title: { zh: '质量与认证', en: 'Quality & Certifications' },
-        body: {
-          zh: '公司配备先进的生产设施与可靠的检测体系，并建有完善的售后服务框架，持续保障卓越的产品品质与令人满意的服务。公司已通过 ISO9001 质量管理体系认证与 ISO14001 环境管理体系认证。',
-          en: 'Equipped with advanced production facilities and reliable testing systems, backed by a comprehensive after-sales service framework, we consistently guarantee premium product quality and satisfactory service. The company has obtained ISO9001 Quality Management System Certification and ISO14001 Environmental Management System Certification.'
-        },
-        bullets: []
+        body: { zh: '公司配备先进的生产设施与可靠的检测体系，并建有完善的售后服务框架，持续保障卓越的产品品质与令人满意的服务。公司已通过 ISO9001 质量管理体系认证与 ISO14001 环境管理体系认证。', en: 'Equipped with advanced production facilities and reliable testing systems, backed by a comprehensive after-sales service framework, we consistently guarantee premium product quality and satisfactory service. The company has obtained ISO9001 Quality Management System Certification and ISO14001 Environmental Management System Certification.' },
+        bullets: [],
+        image: ''
       },
       {
         title: { zh: '技术团队与服务', en: 'Technical Team & Support' },
-        body: {
-          zh: '作为涂料行业的大型专业制造商，公司拥有一支具备 10 年以上行业经验的技术团队。热忱欢迎全球客户浏览官网并随时垂询，我们随时准备为您提供优质服务。',
-          en: 'As a large-scale professional manufacturer in the coatings industry, we have a technical team with more than 10 years of industry expertise. We warmly welcome customers worldwide to browse our official website and contact us for any inquiries — we are ready to deliver excellent services for you.'
-        },
+        body: { zh: '作为涂料行业的大型专业制造商，公司拥有一支具备 10 年以上行业经验的技术团队。热忱欢迎全球客户浏览官网并随时垂询，我们随时准备为您提供优质服务。', en: 'As a large-scale professional manufacturer in the coatings industry, we have a technical team with more than 10 years of industry expertise. We warmly welcome customers worldwide to browse our official website and contact us for any inquiries — we are ready to deliver excellent services for you.' },
         bullets: [
           { zh: '专业客服一对一咨询，充分了解您的需求', en: 'One-on-one consultation with a professional customer service representative to understand your needs' },
           { zh: '长达一年的专属一对一技术支持，现场操作问题由技术团队全程跟进', en: 'Dedicated one-on-one technical support for a full year — all on-site operational issues are handled by our technical team' }
-        ]
+        ],
+        image: ''
+      },
+      {
+        title: { zh: '我们的工厂', en: 'Our Factory' },
+        body: { zh: '我们拥有专业的生产设备与经验丰富的生产团队。\n\n产品质量有保障，发货速度快！', en: 'WE HAVE PROFESSIONAL PRODUCTION EQUIPMENT AND EXPERIENCED MANUFACTURERS.\n\nTHE QUALITY OF THE PRODUCT IS GUARANTEED, AND THE SHIPMENT SPEED IS FAST!' },
+        bullets: [],
+        image: 'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894174.jpg'
       },
       {
         title: { zh: '企业概况', en: 'Company Facts' },
@@ -487,20 +506,63 @@ const DEFAULT_CONFIG = {
           { zh: '主营产品：清漆、稀释剂、固化剂、2K 漆、1K 漆', en: 'Main products: clear coat, thinner, hardener, 2K paint, 1K paint' },
           { zh: '年营业额：500 万 – 1000 万美元', en: 'Annual revenue: US$5 Million – US$10 Million' },
           { zh: '地址：广东省韶关市翁源县', en: 'Location: Wengyuan County, Shaoguan, Guangdong Province, China' }
-        ]
+        ],
+        image: ''
       }
     ],
     gallery: [
-      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779624434764.jpg',
-      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260525/1779699855501.jpg',
-      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779609960810.jpg',
-      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779612122478.jpg'
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894174.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894357.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894497.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894563.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894649.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894850.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626894947.jpg',
+      'https://youjia-oss.youjiakj.com/williscarpaint/Upload/20260524/1779626905878.jpg'
+    ],
+    faqs: [
+      {
+        q: { zh: '如何联系客服？', en: 'How can I contact customer service?' },
+        a: { zh: '如果您对我们的产品或订单有任何疑问，可以通过电子邮件联系我们的客服团队，也可以与我们在线聊天、通过 FB 联系我们，或直接致电！\n\n更多信息，请查看我们的「联系我们」页面。', en: 'If you have any questions about our products or your order, you can contact our customer service team via email, chat with us online, contact us via FB or call us!\n\nFor more information, please see our Contact Us page.' }
+      },
+      {
+        q: { zh: '可以提供免费样品吗？', en: 'Can you provide free samples?' },
+        a: { zh: '可以，我们提供汽车修补漆产品的免费样品，您只需要承担运费。', en: 'Yes, we offer free samples of our automotive refinish paint products. You only need to cover the shipping cost.' }
+      },
+      {
+        q: { zh: '你们是贸易公司还是制造商？', en: 'Are you a trading company or a manufacturer?' },
+        a: { zh: '是的，我们向全球发货。运费另计，将在结账时加上。我们全年都有折扣和促销活动，敬请关注独家优惠。', en: 'Yes, we ship all over the world. Shipping costs will apply, and will be added at checkout. We run discounts and promotions all year, so stay tuned for exclusive deals.' }
+      },
+      {
+        q: { zh: '可以提供定制服务（OEM/ODM）吗？', en: 'Can you offer customized services (OEM/ODM)?' },
+        a: { zh: '可以，我们为汽车修补漆提供 OEM 和 ODM 服务。\n\n我们拥有专门的设计与研发团队，能够满足您在颜色、配方和包装方面的定制需求。\n\nOEM 项目需要品牌授权，自有品牌贴标有 MOQ 要求。\n\n在大规模生产之前，我们可以提供包装 3D 效果图和颜色样品供您确认。', en: 'Yes, we support both OEM and ODM services for automotive refinish paints.\n\nWe have a dedicated design and R&D team to meet your custom color, formulation, and packaging needs.\n\nFor OEM projects, we require brand authorization and have MOQ requirements for private labeling.\n\nWe can provide 3D mockups of packaging and color samples for your approval before mass production.' }
+      },
+      {
+        q: { zh: '你们的 MOQ（最小起订量）是多少？', en: 'What is your MOQ?' },
+        a: { zh: '我们的 MOQ 要求灵活。标准颜色可以接受小批量试单；定制颜色或 OEM 项目的 MOQ 会根据配方和包装需求而有所不同。详情请联系我们。', en: 'We offer flexible MOQ requirements. For standard colors, we can accommodate small trial orders; for custom colors or OEM projects, MOQ will vary based on formulation and packaging needs. Please contact us for details.' }
+      },
+      {
+        q: { zh: '你们在交货前会检测所有货物吗？', en: 'Do you test all your goods before delivery?' },
+        a: { zh: '是的，我们在发货前对所有产品进行 100% 质量检测，确保其符合我们的标准。', en: 'Yes, we conduct 100% quality testing on all products before shipment to ensure they meet our standards.' }
+      },
+      {
+        q: { zh: '你们的付款条件是什么？', en: 'What are your payment terms?' },
+        a: { zh: '我们接受电汇（T/T）付款：预付 30% 定金，70% 尾款在交货前付清。在您结清尾款之前，我们会将成品和包装的照片发送给您确认。', en: 'We accept payment by T/T (Telegraphic Transfer): 30% deposit in advance, and 70% balance before delivery. Before you settle the balance, we will send you photos of the finished products and packaging for your confirmation.' }
+      }
+    ],
+    testimonials: [
+      { name: 'Jack', text: { zh: '产品介绍非常详细，我非常满意。', en: 'The product introduction is very detailed, and I am very satisfied.' } },
+      { name: 'Parker Robert', text: { zh: '产品质量非常好，客服人员也非常专业。我们很快就收到了产品。期待下一次合作……', en: 'The product quality is very good, and the customer service personnel are also very professional. We quickly received the product. Looking forward to the next collaboration....' } },
+      { name: 'Kamran Novruzov', text: { zh: '可以配送到阿塞拜疆吗？', en: 'Delivery to Azerbaijan is available?' } }
     ]
   },
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
-  tiktok: '', instagram: '', facebook: '', youtube: '', wechat: ''
+  tiktok: '', instagram: '', facebook: '', youtube: '', wechat: '',
+  // Internal: sha256 of the bundled willis catalogue last synced into
+  // the products table (see the startup sync above); not admin-edited.
+  willisImportHash: ''
 }
 function getConfig() {
   const row = db.prepare('SELECT data FROM site_config WHERE id = 1').get()
@@ -530,8 +592,13 @@ function sanitizeImageList(raw) {
     .map((u) => u.trim().slice(0, 1000))
     .slice(0, 30)
 }
+function sanitizeImageUrl(raw) {
+  if (typeof raw !== 'string') return ''
+  const u = raw.trim().slice(0, 1000)
+  return /^(https?:)?\/\//i.test(u) || u.startsWith('/') ? u : ''
+}
 function sanitizeProfileContent(raw) {
-  const empty = { heroImages: [], sections: [], gallery: [] }
+  const empty = { heroImages: [], sections: [], gallery: [], faqs: [], testimonials: [] }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
   const sections = (Array.isArray(raw.sections) ? raw.sections : [])
     .filter((s) => s && typeof s === 'object' && !Array.isArray(s))
@@ -542,9 +609,24 @@ function sanitizeProfileContent(raw) {
       bullets: (Array.isArray(s.bullets) ? s.bullets : [])
         .filter((b) => b && typeof b === 'object' && !Array.isArray(b))
         .slice(0, 30)
-        .map((b) => sanitizeLangMap(b, 300))
+        .map((b) => sanitizeLangMap(b, 300)),
+      image: sanitizeImageUrl(s.image)
     }))
-  return { heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery) }
+  const faqs = (Array.isArray(raw.faqs) ? raw.faqs : [])
+    .filter((f) => f && typeof f === 'object' && !Array.isArray(f))
+    .slice(0, 20)
+    .map((f) => ({
+      q: sanitizeLangMap(f.q, 300),
+      a: sanitizeLangMap(f.a, 2000)
+    }))
+  const testimonials = (Array.isArray(raw.testimonials) ? raw.testimonials : [])
+    .filter((t) => t && typeof t === 'object' && !Array.isArray(t))
+    .slice(0, 10)
+    .map((t) => ({
+      name: typeof t.name === 'string' ? t.name.trim().slice(0, 100) : '',
+      text: sanitizeLangMap(t.text, 1000)
+    }))
+  return { heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery), faqs, testimonials }
 }
 
 function pickLang(namesJson, lang) {

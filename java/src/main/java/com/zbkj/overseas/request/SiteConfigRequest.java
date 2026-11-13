@@ -129,7 +129,7 @@ public class SiteConfigRequest {
         private String categoryId;
     }
 
-    /** Custom company-profile content: hero carousel + sections + gallery. */
+    /** Custom company-profile content: hero carousel + sections + gallery + FAQ + testimonials. */
     @Data
     @Schema(name = "ProfileContent", description = "公司简介图文自定义内容")
     public static class ProfileContent {
@@ -142,9 +142,15 @@ public class SiteConfigRequest {
 
         @Schema(description = "图库 URL 列表")
         private List<String> gallery = new ArrayList<>();
+
+        @Schema(description = "常见问题列表")
+        private List<ProfileFaq> faqs = new ArrayList<>();
+
+        @Schema(description = "客户评价列表")
+        private List<ProfileTestimonial> testimonials = new ArrayList<>();
     }
 
-    /** One company-profile section: heading + body paragraphs + bullets. */
+    /** One company-profile section: heading + body paragraphs + bullets + optional image. */
     @Data
     @Schema(name = "ProfileSection", description = "公司简介章节")
     public static class ProfileSection {
@@ -152,10 +158,37 @@ public class SiteConfigRequest {
         @Schema(description = "标题（多语言 {语言码: 文案}）")
         private Map<String, String> title;
 
-        @Schema(description = "正文（多语言 {语言码: 文案}，换行分段）")
+        @Schema(description = "正文（多语言 {语言码: 文案}，空行分段）")
         private Map<String, String> body;
 
         @Schema(description = "要点列表（每条为多语言 {语言码: 文案}）")
         private List<Map<String, String>> bullets;
+
+        @Schema(description = "章节配图 URL（可空）")
+        private String image;
+    }
+
+    /** One profile FAQ entry. */
+    @Data
+    @Schema(name = "ProfileFaq", description = "公司简介常见问题")
+    public static class ProfileFaq {
+
+        @Schema(description = "问题（多语言 {语言码: 文案}）")
+        private Map<String, String> q;
+
+        @Schema(description = "答案（多语言 {语言码: 文案}，空行分段）")
+        private Map<String, String> a;
+    }
+
+    /** One customer testimonial on the profile page. */
+    @Data
+    @Schema(name = "ProfileTestimonial", description = "公司简介客户评价")
+    public static class ProfileTestimonial {
+
+        @Schema(description = "客户姓名（纯文本）")
+        private String name;
+
+        @Schema(description = "评价内容（多语言 {语言码: 文案}）")
+        private Map<String, String> text;
     }
 }
