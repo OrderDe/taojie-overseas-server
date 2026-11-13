@@ -37,6 +37,9 @@ public class SiteConfigRequest {
     @Schema(description = "是否显示首页『成为经销商』卡片（缺省为关）")
     private Boolean showDealer;
 
+    @Schema(description = "是否显示首页联系方式卡（热线/WhatsApp/邮箱，无经销商字样，缺省为开）")
+    private Boolean showContact;
+
     @Schema(description = "WhatsApp 联系方式")
     private String whatsapp;
 
