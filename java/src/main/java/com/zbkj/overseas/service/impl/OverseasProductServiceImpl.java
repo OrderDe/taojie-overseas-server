@@ -147,6 +147,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setName(LangUtil.pick(p.getNames(), lang));
         r.setPrice(p.getPrice());
         r.setOtPrice(p.getOtPrice());
+        r.setNegotiable(Boolean.TRUE.equals(p.getNegotiable()));
         r.setSales(p.getSales());
         Map<String, Object> content = LangUtil.localizedContent(p.getLocalizedContent(), lang);
         r.setUnit(String.valueOf(content.getOrDefault("unit", p.getUnit() == null ? "" : p.getUnit())));
@@ -211,6 +212,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         p.setNames(JSONUtil.toJsonStr(names));
         p.setPrice(request.getPrice() == null ? BigDecimal.ZERO : request.getPrice());
         p.setOtPrice(request.getOtPrice() == null ? BigDecimal.ZERO : request.getOtPrice());
+        p.setNegotiable(Boolean.TRUE.equals(request.getNegotiable()));
         p.setSales(request.getSales() == null ? 0 : request.getSales());
         p.setUnit(StrUtil.blankToDefault(request.getUnit(), "pc"));
         p.setMoq(request.getMoq() == null ? 0 : request.getMoq());
@@ -241,6 +243,7 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
         r.setNames(LangUtil.toStringMap(p.getNames()));
         r.setPrice(p.getPrice());
         r.setOtPrice(p.getOtPrice());
+        r.setNegotiable(Boolean.TRUE.equals(p.getNegotiable()));
         r.setSales(p.getSales());
         r.setUnit(p.getUnit());
         r.setMoq(p.getMoq());

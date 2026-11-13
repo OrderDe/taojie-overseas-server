@@ -33,6 +33,9 @@ public class ProductSaveRequest {
     @Schema(description = "美元原价")
     private BigDecimal otPrice;
 
+    @Schema(description = "是否面议（true = 前台不显示数字价格、仅可询价、不可加购）")
+    private Boolean negotiable;
+
     @Schema(description = "销量")
     private Integer sales;
 

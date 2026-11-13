@@ -32,6 +32,9 @@ public class AdminProductResponse implements Serializable {
 
     private BigDecimal otPrice;
 
+    @Schema(description = "是否面议")
+    private Boolean negotiable;
+
     private Integer sales;
 
     private String unit;

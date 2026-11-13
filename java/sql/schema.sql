@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS eb_overseas_product (
     names       JSON         NOT NULL COMMENT '多语言名称 {"en":..,"zh":..,...}',
     price       DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '美元价',
     ot_price    DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '美元原价',
+    negotiable  TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否面议（1 = 前台显示面议、不显示数字价、不可加购）',
     sales       INT          NOT NULL DEFAULT 0,
     unit        VARCHAR(64)      NULL,
     moq         INT          NOT NULL DEFAULT 1,
