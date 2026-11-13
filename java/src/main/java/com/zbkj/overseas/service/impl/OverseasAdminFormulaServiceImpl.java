@@ -166,7 +166,7 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
         Spec spec = spec(entity);
         int p = Math.max(1, page);
         int size = Math.min(200, Math.max(1, pageSize));
-        QueryWrapper w = new QueryWrapper();
+        QueryWrapper<Object> w = new QueryWrapper<>();
         if (spec.hasDeleted) {
             w.eq("is_deleted", "0");
         }
@@ -350,7 +350,7 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
     }
 
     private Long nextId(Spec spec) {
-        Object max = spec.dao.selectOne(new QueryWrapper().orderByDesc("id").last("LIMIT 1"));
+        Object max = spec.dao.selectOne(new QueryWrapper<>().orderByDesc("id").last("LIMIT 1"));
         if (max == null) {
             return 1L;
         }
