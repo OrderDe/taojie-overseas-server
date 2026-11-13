@@ -51,6 +51,8 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("storyTitle", "");
         DEFAULTS.put("storyText", "");
         DEFAULTS.put("profileUrl", "https://williscarpaint.com/");
+        DEFAULTS.put("profileMode", "embed");
+        DEFAULTS.put("profileContent", new SiteConfigRequest.ProfileContent());
         DEFAULTS.put("tiktok", "");
         DEFAULTS.put("instagram", "");
         DEFAULTS.put("facebook", "");
@@ -89,6 +91,15 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("storyTitle", request.getStoryTitle());
         putIfPresent("storyText", request.getStoryText());
         putIfPresent("profileUrl", request.getProfileUrl());
+        // Company-profile mode is a two-value enum; anything else is
+        // stored as 'embed' (same contract as the Node backend).
+        if (request.getProfileMode() != null) {
+            put("profileMode", "custom".equals(request.getProfileMode()) ? "custom" : "embed");
+        }
+        // Custom profile content is stored as a JSON string, like navItems.
+        if (request.getProfileContent() != null) {
+            put("profileContent", JSONUtil.toJsonStr(request.getProfileContent()));
+        }
         putIfPresent("tiktok", request.getTiktok());
         putIfPresent("instagram", request.getInstagram());
         putIfPresent("facebook", request.getFacebook());
@@ -143,6 +154,21 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
                 return JSONUtil.toList(value, SiteConfigRequest.NavItem.class);
             } catch (Exception e) {
                 return new ArrayList<>();
+            }
+        }
+        if ("profileMode".equals(key)) {
+            return "custom".equals(value) ? "custom" : "embed";
+        }
+        if ("profileContent".equals(key)) {
+            if (StrUtil.isBlank(value)) {
+                return new SiteConfigRequest.ProfileContent();
+            }
+            try {
+                SiteConfigRequest.ProfileContent parsed =
+                        JSONUtil.toBean(value, SiteConfigRequest.ProfileContent.class);
+                return parsed == null ? new SiteConfigRequest.ProfileContent() : parsed;
+            } catch (Exception e) {
+                return new SiteConfigRequest.ProfileContent();
             }
         }
         return value == null ? "" : value;

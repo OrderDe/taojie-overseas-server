@@ -392,6 +392,15 @@ const DEFAULT_CONFIG = {
   // whose profile page embeds the company homepage). Empty = the
   // storefront falls back to the storyTitle/storyText text version.
   profileUrl: 'https://williscarpaint.com/',
+  // Company profile display mode: 'embed' shows profileUrl full-page in
+  // an iframe; 'custom' renders profileContent natively (see below).
+  profileMode: 'embed',
+  // Custom company-profile content, authored in the admin: a hero image
+  // carousel, free-form sections (title/body/bullets, each a
+  // {lang: text} map like product names) and a photo gallery. The PUT
+  // handler shape-guards it (sanitizeProfileContent), so the storefront
+  // can render whatever is stored without defensive checks.
+  profileContent: { heroImages: [], sections: [], gallery: [] },
   // Social/contact jump links for the storefront "Start Chat with" panel.
   // Full profile URLs (empty = icon hidden); wechat is an ID (tap copies).
   // whatsapp / email / hotline above are reused by the same panel.
@@ -401,6 +410,45 @@ function getConfig() {
   const row = db.prepare('SELECT data FROM site_config WHERE id = 1').get()
   if (!row) return { ...DEFAULT_CONFIG }
   try { return { ...DEFAULT_CONFIG, ...JSON.parse(row.data) } } catch { return { ...DEFAULT_CONFIG } }
+}
+
+// ---- Company-profile custom content guards ----
+// profileContent is admin-authored free-form JSON; keep only the shape
+// the storefront renders and bound every size, so a junk or hostile
+// payload can neither break the profile page nor bloat the config row.
+// A {lang: text} map keeps string values only, each truncated.
+function sanitizeLangMap(raw, maxLen) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v !== 'string') continue
+    const s = v.trim()
+    if (s) out[k] = s.slice(0, maxLen)
+  }
+  return out
+}
+function sanitizeImageList(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((u) => typeof u === 'string' && u.trim())
+    .map((u) => u.trim().slice(0, 1000))
+    .slice(0, 30)
+}
+function sanitizeProfileContent(raw) {
+  const empty = { heroImages: [], sections: [], gallery: [] }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .filter((s) => s && typeof s === 'object' && !Array.isArray(s))
+    .slice(0, 20)
+    .map((s) => ({
+      title: sanitizeLangMap(s.title, 300),
+      body: sanitizeLangMap(s.body, 5000),
+      bullets: (Array.isArray(s.bullets) ? s.bullets : [])
+        .filter((b) => b && typeof b === 'object' && !Array.isArray(b))
+        .slice(0, 30)
+        .map((b) => sanitizeLangMap(b, 300))
+    }))
+  return { heroImages: sanitizeImageList(raw.heroImages), sections, gallery: sanitizeImageList(raw.gallery) }
 }
 
 function pickLang(namesJson, lang) {
@@ -1312,6 +1360,10 @@ const server = createServer(async (req, res) => {
           }
           return item
         })
+      // Company profile: the mode is a two-value enum — anything else
+      // falls back to 'embed' — and the custom content is shape-guarded.
+      merged.profileMode = merged.profileMode === 'custom' ? 'custom' : 'embed'
+      merged.profileContent = sanitizeProfileContent(merged.profileContent)
       db.prepare('INSERT INTO site_config (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
         .run(JSON.stringify(merged))
       return send(res, 200, merged)

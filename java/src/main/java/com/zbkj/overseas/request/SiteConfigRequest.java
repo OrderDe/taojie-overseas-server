@@ -3,7 +3,9 @@ package com.zbkj.overseas.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Site-config update (admin). Fields mirror the PC frontend's pc-config.json
@@ -84,6 +86,12 @@ public class SiteConfigRequest {
     @Schema(description = "公司简介嵌入网址（前台公司简介页整页嵌入；空 = 显示文字版简介）")
     private String profileUrl;
 
+    @Schema(description = "公司简介显示模式：embed 整页嵌入 profileUrl / custom 图文自定义；非法值按 embed 处理")
+    private String profileMode;
+
+    @Schema(description = "公司简介图文自定义内容（profileMode=custom 时前台按当前语言渲染）")
+    private ProfileContent profileContent;
+
     @Schema(description = "TikTok 主页链接（空 = 前台不显示图标）")
     private String tiktok;
 
@@ -119,5 +127,35 @@ public class SiteConfigRequest {
 
         @Schema(description = "type=category 时的目标分类 id")
         private String categoryId;
+    }
+
+    /** Custom company-profile content: hero carousel + sections + gallery. */
+    @Data
+    @Schema(name = "ProfileContent", description = "公司简介图文自定义内容")
+    public static class ProfileContent {
+
+        @Schema(description = "顶部轮播图 URL 列表")
+        private List<String> heroImages = new ArrayList<>();
+
+        @Schema(description = "章节列表")
+        private List<ProfileSection> sections = new ArrayList<>();
+
+        @Schema(description = "图库 URL 列表")
+        private List<String> gallery = new ArrayList<>();
+    }
+
+    /** One company-profile section: heading + body paragraphs + bullets. */
+    @Data
+    @Schema(name = "ProfileSection", description = "公司简介章节")
+    public static class ProfileSection {
+
+        @Schema(description = "标题（多语言 {语言码: 文案}）")
+        private Map<String, String> title;
+
+        @Schema(description = "正文（多语言 {语言码: 文案}，换行分段）")
+        private Map<String, String> body;
+
+        @Schema(description = "要点列表（每条为多语言 {语言码: 文案}）")
+        private List<Map<String, String>> bullets;
     }
 }
