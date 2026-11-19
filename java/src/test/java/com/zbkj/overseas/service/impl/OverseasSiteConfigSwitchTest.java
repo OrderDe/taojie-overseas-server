@@ -59,6 +59,15 @@ class OverseasSiteConfigSwitchTest {
                             store.put(row.getConfigKey(), row);
                             return 1;
                         }
+                        case "insertOrUpdate": {
+                            // ServiceImpl.saveOrUpdate() delegates to this
+                            // BaseMapper method and unboxes its Boolean
+                            // result — returning null here NPEs the test,
+                            // so store the row and report success.
+                            OverseasSiteConfig row = (OverseasSiteConfig) args[0];
+                            store.put(row.getConfigKey(), row);
+                            return true;
+                        }
                         case "selectById":
                             return store.get(String.valueOf(args[0]));
                         case "selectList":
