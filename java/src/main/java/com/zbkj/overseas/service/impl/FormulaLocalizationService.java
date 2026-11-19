@@ -99,11 +99,27 @@ public class FormulaLocalizationService {
             }
             for(int i=0;i<batch.size();i++) {
                 String source=batch.get(i),text=outputs.get(i);
-                if(translated) jdbc.update("INSERT INTO eb_overseas_formula_translation(source_hash,lang,source_text,translated_text) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE translated_text=VALUES(translated_text)",hash(source),lang,text);
+                if(translated) cachePut(source,lang,text);
                 translations.put(source,text);
             }
         }
         return rewriteFields(tree,(field,text)->displayText(field,text,source->translations.getOrDefault(source,source)));
+    }
+    /**
+     * Best-effort cache write. Deliberately avoids INSERT ... ON DUPLICATE
+     * KEY UPDATE ... VALUES(col): with rewriteBatchedStatements=true the
+     * MySQL driver miscounts that statement's parameters ("No value
+     * specified for parameter 4") and the write explodes. A plain
+     * update-then-insert has no such quirk, and any remaining failure is
+     * swallowed — the cache must never fail the formula query itself.
+     */
+    private void cachePut(String source,String lang,String text) {
+        try {
+            int updated=jdbc.update("UPDATE eb_overseas_formula_translation SET translated_text=? WHERE source_hash=? AND lang=?",text,hash(source),lang);
+            if(updated==0) jdbc.update("INSERT INTO eb_overseas_formula_translation(source_hash,lang,source_text,translated_text) VALUES(?,?,?,?)",hash(source),lang,source,text);
+        } catch(RuntimeException ignored) {
+            // Cache is an optimisation only; the response already has the text.
+        }
     }
     private List<String> translateBatch(List<String> batch,String lang) {
         try {
