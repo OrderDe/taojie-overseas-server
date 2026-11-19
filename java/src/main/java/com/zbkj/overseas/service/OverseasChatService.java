@@ -4,11 +4,14 @@ import com.zbkj.overseas.request.ChatNoteRequest;
 import com.zbkj.overseas.request.ChatPingRequest;
 import com.zbkj.overseas.request.ChatReplyRequest;
 import com.zbkj.overseas.request.ChatSendRequest;
+import com.zbkj.overseas.request.ChatSettingsRequest;
 import com.zbkj.overseas.request.ChatStartRequest;
 import com.zbkj.overseas.request.ChatStatusRequest;
 import com.zbkj.overseas.request.ChatTypingRequest;
+import com.zbkj.overseas.request.ChatVisitorNameRequest;
 import com.zbkj.overseas.response.ChatMessageResponse;
 import com.zbkj.overseas.response.ChatSessionResponse;
+import com.zbkj.overseas.response.ChatSettingsResponse;
 import com.zbkj.overseas.response.ChatStartResponse;
 import com.zbkj.overseas.response.ChatThreadResponse;
 
@@ -53,6 +56,15 @@ public interface OverseasChatService {
 
     /** Admin: open/close the session. */
     void updateStatus(Long sessionId, ChatStatusRequest request);
+
+    /** Admin: rename the visitor on a session (display label only). Returns the stored name. */
+    String updateVisitorName(Long sessionId, ChatVisitorNameRequest request);
+
+    /** Admin: read the chat settings (idle auto-close window). */
+    ChatSettingsResponse getChatSettings();
+
+    /** Admin: save the chat settings (idle auto-close window, hours; 0 = never). */
+    ChatSettingsResponse updateChatSettings(ChatSettingsRequest request);
 
     /** Result of a visitor pull: the new messages + the agent's typing flag. */
     record ChatPullResult(List<ChatMessageResponse> messages, boolean agentTyping) {

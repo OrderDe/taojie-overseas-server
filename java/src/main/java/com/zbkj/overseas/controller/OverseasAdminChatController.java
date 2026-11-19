@@ -3,9 +3,12 @@ package com.zbkj.overseas.controller;
 import com.zbkj.overseas.common.result.CommonResult;
 import com.zbkj.overseas.request.ChatNoteRequest;
 import com.zbkj.overseas.request.ChatReplyRequest;
+import com.zbkj.overseas.request.ChatSettingsRequest;
 import com.zbkj.overseas.request.ChatStatusRequest;
+import com.zbkj.overseas.request.ChatVisitorNameRequest;
 import com.zbkj.overseas.response.ChatMessageResponse;
 import com.zbkj.overseas.response.ChatSessionResponse;
+import com.zbkj.overseas.response.ChatSettingsResponse;
 import com.zbkj.overseas.response.ChatThreadResponse;
 import com.zbkj.overseas.service.OverseasChatService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -78,5 +81,26 @@ public class OverseasAdminChatController {
         chatService.updateStatus(id, request);
         String status = request != null && "closed".equals(request.getStatus()) ? "closed" : "open";
         return CommonResult.success(Map.of("ok", true, "status", status));
+    }
+
+    @Operation(summary = "管理端：修改访客名称（仅显示名，不影响访客身份）")
+    @PutMapping("/sessions/{id}/visitor-name")
+    public CommonResult<Map<String, Object>> visitorName(@PathVariable Long id,
+                                                         @RequestBody(required = false) ChatVisitorNameRequest request) {
+        String name = chatService.updateVisitorName(id, request);
+        return CommonResult.success(Map.of("ok", true, "visitorName", name));
+    }
+
+    @Operation(summary = "管理端：读取聊天设置（会话闲置自动结束）")
+    @GetMapping("/settings")
+    public CommonResult<ChatSettingsResponse> getSettings() {
+        return CommonResult.success(chatService.getChatSettings());
+    }
+
+    @Operation(summary = "管理端：保存聊天设置（autoCloseHours 小时，0 = 不自动结束）")
+    @PutMapping("/settings")
+    public CommonResult<ChatSettingsResponse> saveSettings(
+            @RequestBody(required = false) ChatSettingsRequest request) {
+        return CommonResult.success(chatService.updateChatSettings(request));
     }
 }

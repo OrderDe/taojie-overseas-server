@@ -5,22 +5,28 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zbkj.overseas.common.exception.OverseasException;
+import com.zbkj.overseas.common.result.CommonResultCode;
 import com.zbkj.overseas.common.result.OverseasResultCode;
 import com.zbkj.overseas.dao.OverseasChatMessageDao;
 import com.zbkj.overseas.dao.OverseasChatSessionDao;
+import com.zbkj.overseas.dao.OverseasSiteConfigDao;
 import com.zbkj.overseas.model.OverseasChatMessage;
 import com.zbkj.overseas.model.OverseasChatSession;
+import com.zbkj.overseas.model.OverseasSiteConfig;
 import com.zbkj.overseas.request.ChatNoteRequest;
 import com.zbkj.overseas.request.ChatPingRequest;
 import com.zbkj.overseas.request.ChatProductRequest;
 import com.zbkj.overseas.request.ChatReplyRequest;
 import com.zbkj.overseas.request.ChatSendRequest;
+import com.zbkj.overseas.request.ChatSettingsRequest;
 import com.zbkj.overseas.request.ChatStartRequest;
 import com.zbkj.overseas.request.ChatStatusRequest;
 import com.zbkj.overseas.request.ChatTypingRequest;
+import com.zbkj.overseas.request.ChatVisitorNameRequest;
 import com.zbkj.overseas.response.ChatMessageResponse;
 import com.zbkj.overseas.response.ChatProductResponse;
 import com.zbkj.overseas.response.ChatSessionResponse;
+import com.zbkj.overseas.response.ChatSettingsResponse;
 import com.zbkj.overseas.response.ChatStartResponse;
 import com.zbkj.overseas.response.ChatThreadResponse;
 import com.zbkj.overseas.service.OverseasChatService;
@@ -64,9 +70,16 @@ public class OverseasChatServiceImpl implements OverseasChatService {
     @Autowired
     private OverseasChatMessageDao messageDao;
 
+    @Autowired
+    private OverseasSiteConfigDao siteConfigDao;
+
     @Override
     public ChatStartResponse start(ChatStartRequest request, String clientIp, String userAgent) {
         OverseasChatSession existing = findByToken(request == null ? null : request.getToken());
+        // Lazy idle auto-close (chat settings): sweep other sessions
+        // before serving this visitor; the visitor's own session is
+        // active by definition and is never closed under them.
+        applyAutoClose(existing == null ? null : existing.getId());
         if (existing != null) {
             // Reuse: refresh presence, and follow the visitor to a new page.
             existing.setLastSeenAt(new Date());
@@ -190,6 +203,7 @@ public class OverseasChatServiceImpl implements OverseasChatService {
         if (session == null) {
             throw new OverseasException(OverseasResultCode.CHAT_SESSION_INVALID);
         }
+        applyAutoClose(session.getId());
         session.setLastSeenAt(new Date());
         String page = ChatProfileUtil.pageLabel(request.getPage(), request.getPageTitle());
         if (!page.isEmpty() && !page.equals(session.getCurrentPage())) {
@@ -213,6 +227,7 @@ public class OverseasChatServiceImpl implements OverseasChatService {
 
     @Override
     public List<ChatSessionResponse> listSessionsForAdmin(String keyword) {
+        applyAutoClose(null);
         LambdaQueryWrapper<OverseasChatSession> wrapper = new LambdaQueryWrapper<OverseasChatSession>()
                 .orderByDesc(OverseasChatSession::getLastMsgAt)
                 .orderByDesc(OverseasChatSession::getId);
@@ -283,7 +298,92 @@ public class OverseasChatServiceImpl implements OverseasChatService {
         sessionDao.updateById(session);
     }
 
+    @Override
+    public String updateVisitorName(Long sessionId, ChatVisitorNameRequest request) {
+        OverseasChatSession session = requireSession(sessionId);
+        String name = request == null ? "" : StrUtil.trimToEmpty(request.getName());
+        if (name.isEmpty()) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "访客名称不能为空");
+        }
+        // Same 64-char cap as session creation.
+        if (name.length() > 64) {
+            name = name.substring(0, 64);
+        }
+        session.setVisitorName(name);
+        sessionDao.updateById(session);
+        return name;
+    }
+
+    @Override
+    public ChatSettingsResponse getChatSettings() {
+        ChatSettingsResponse response = new ChatSettingsResponse();
+        response.setAutoCloseHours(readAutoCloseHours());
+        return response;
+    }
+
+    @Override
+    public ChatSettingsResponse updateChatSettings(ChatSettingsRequest request) {
+        Integer hours = request == null ? null : request.getAutoCloseHours();
+        if (hours == null || hours < 0 || hours > 24 * 366) {
+            throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "自动结束时间需为 0 到 8784 小时（0 = 不自动结束）");
+        }
+        // Stored in the site-config key-value table, but written here —
+        // the chat endpoints are guarded by the "chat" permission alone.
+        OverseasSiteConfig row = new OverseasSiteConfig();
+        row.setConfigKey(AUTO_CLOSE_KEY);
+        row.setConfigValue(String.valueOf(hours));
+        row.setUpdateTime(new Date());
+        if (siteConfigDao.selectById(AUTO_CLOSE_KEY) == null) {
+            siteConfigDao.insert(row);
+        } else {
+            siteConfigDao.updateById(row);
+        }
+        ChatSettingsResponse response = new ChatSettingsResponse();
+        response.setAutoCloseHours(hours);
+        return response;
+    }
+
     // ---- helpers ----
+
+    private static final String AUTO_CLOSE_KEY = "chatAutoCloseHours";
+
+    private int readAutoCloseHours() {
+        OverseasSiteConfig row = siteConfigDao.selectById(AUTO_CLOSE_KEY);
+        if (row == null || row.getConfigValue() == null) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(row.getConfigValue().trim()));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Idle auto-close, evaluated lazily (no scheduler): open sessions
+     * whose last message is older than the configured window are marked
+     * closed. Runs when an admin lists sessions and when a visitor
+     * starts/pings; the caller's own session is exempt — a visitor who
+     * is present right now is never closed mid-visit (and a message to
+     * a closed session re-opens it anyway).
+     */
+    private void applyAutoClose(Long excludeSessionId) {
+        int hours = readAutoCloseHours();
+        if (hours <= 0) {
+            return;
+        }
+        Date cutoff = new Date(System.currentTimeMillis() - hours * 3_600_000L);
+        List<OverseasChatSession> idle = sessionDao.selectList(new LambdaQueryWrapper<OverseasChatSession>()
+                .eq(OverseasChatSession::getStatus, "open")
+                .lt(OverseasChatSession::getLastMsgAt, cutoff));
+        for (OverseasChatSession session : idle) {
+            if (excludeSessionId != null && excludeSessionId.equals(session.getId())) {
+                continue;
+            }
+            session.setStatus("closed");
+            sessionDao.updateById(session);
+        }
+    }
 
     private OverseasChatSession findByToken(String token) {
         if (StrUtil.isBlank(token)) {
