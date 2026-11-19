@@ -52,7 +52,12 @@ public class OverseasCategoryServiceImpl extends ServiceImpl<OverseasCategoryDao
     }
     @Override public List<AdminCategoryResponse> listForAdmin() {
         List<OverseasCategory> all = ordered(); Map<String, Long> counts = counts(false);
-        return all.stream().map(c -> toAdminResponse(c, all, counts)).toList();
+        // Admin list is id-desc (newest first) by product decision; the
+        // sort-ordered `all` is only hierarchy context for level/path/count
+        // (order-independent lookups). The storefront keeps sort order via
+        // ordered() in listForFront.
+        List<OverseasCategory> newestFirst = list(new LambdaQueryWrapper<OverseasCategory>().orderByDesc(OverseasCategory::getId));
+        return newestFirst.stream().map(c -> toAdminResponse(c, all, counts)).toList();
     }
     @Override @Transactional public AdminCategoryResponse saveForAdmin(CategorySaveRequest request, String id) {
         Map<String, String> names = request.getNames();

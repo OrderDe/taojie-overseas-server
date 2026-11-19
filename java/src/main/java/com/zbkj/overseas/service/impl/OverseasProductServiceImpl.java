@@ -177,8 +177,9 @@ public class OverseasProductServiceImpl extends ServiceImpl<OverseasProductDao, 
 
     @Override
     public List<AdminProductResponse> listForAdmin(String categoryId, boolean includeChildren) {
+        // Admin list is pure id-desc (newest first) by product decision;
+        // the sort field only orders the storefront (pageForFront above).
         LambdaQueryWrapper<OverseasProduct> wrapper = new LambdaQueryWrapper<OverseasProduct>()
-                .orderByDesc(OverseasProduct::getSort)
                 .orderByDesc(OverseasProduct::getId);
         if (categoryId != null && !categoryId.isBlank()) {
             if (includeChildren) {

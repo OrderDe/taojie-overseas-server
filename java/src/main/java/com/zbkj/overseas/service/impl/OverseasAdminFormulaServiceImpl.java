@@ -95,23 +95,26 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
     @Autowired
     private OverseasColorFormulaDao colorFormulaDao;
 
+    // Ordering note: every admin list below is pure id-desc (newest
+    // first) by product decision — the letter_rank / sort_rank fields
+    // remain editable form fields but no longer order admin lists.
     @PostConstruct
     public void initSpecs() {
         Spec s;
         s = new Spec();
         s.dao = carBrandDao; s.entityClass = OverseasCarBrand.class; s.hasDeleted = true;
-        s.searchCols = List.of("name"); s.orderCols = List.of("letter_rank", "id");
+        s.searchCols = List.of("name"); s.orderCols = List.of("id"); s.orderDesc = true;
         specs.put("car-brands", s);
 
         s = new Spec();
         s.dao = carModelDao; s.entityClass = OverseasCarModel.class; s.hasDeleted = true;
         s.searchCols = List.of("model", "brand"); s.filterCols = Map.of("brandId", "brand_id");
-        s.orderCols = List.of("sort_rank", "id"); s.required = List.of("model", "brandId");
+        s.orderCols = List.of("id"); s.orderDesc = true; s.required = List.of("model", "brandId");
         specs.put("car-models", s);
 
         s = new Spec();
         s.dao = carCountryDao; s.entityClass = OverseasCarCountry.class; s.hasDeleted = false;
-        s.searchCols = List.of("name", "name_en"); s.orderCols = List.of("sort_rank", "id");
+        s.searchCols = List.of("name", "name_en"); s.orderCols = List.of("id"); s.orderDesc = true;
         // Bug #19: name/nameEn/language/code are required server-side too;
         // state/sortRank carry dialog defaults, so they are only enforced
         // by the admin form, not blocked here.
@@ -121,20 +124,20 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
         s = new Spec();
         s.dao = carFactoryDao; s.entityClass = OverseasCarFactory.class; s.hasDeleted = false; s.inputId = true;
         s.searchCols = List.of("name"); s.filterCols = Map.of("brandId", "brand_id");
-        s.orderCols = List.of("sort_rank", "id");
+        s.orderCols = List.of("id"); s.orderDesc = true;
         // Bug #18: same split as countries — state/sortRank stay form-side.
         s.required = List.of("name", "brandId", "country");
         specs.put("car-factories", s);
 
         s = new Spec();
         s.dao = colorCardDao; s.entityClass = OverseasColorCard.class; s.hasDeleted = true; s.inputId = true;
-        s.searchCols = List.of("name", "code"); s.orderCols = List.of("id");
+        s.searchCols = List.of("name", "code"); s.orderCols = List.of("id"); s.orderDesc = true;
         s.required = List.of("name", "code");
         specs.put("color-cards", s);
 
         s = new Spec();
         s.dao = masterbatchDao; s.entityClass = OverseasColorMasterbatch.class; s.hasDeleted = true; s.inputId = true;
-        s.searchCols = List.of("model", "name", "eng_name"); s.orderCols = List.of("id");
+        s.searchCols = List.of("model", "name", "eng_name"); s.orderCols = List.of("id"); s.orderDesc = true;
         s.required = List.of("model", "name", "engName");
         specs.put("masterbatches", s);
 
@@ -148,13 +151,13 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
 
         s = new Spec();
         s.dao = colorBrandDao; s.entityClass = OverseasColorBrand.class; s.hasDeleted = true;
-        s.searchCols = List.of("name"); s.orderCols = List.of("id");
+        s.searchCols = List.of("name"); s.orderCols = List.of("id"); s.orderDesc = true;
         s.required = List.of("name", "logo");
         specs.put("color-brands", s);
 
         s = new Spec();
         s.dao = colorNumberDao; s.entityClass = OverseasColorNumber.class; s.hasDeleted = true;
-        s.searchCols = List.of("name", "color_name"); s.orderCols = List.of("id");
+        s.searchCols = List.of("name", "color_name"); s.orderCols = List.of("id"); s.orderDesc = true;
         s.required = List.of("name");
         specs.put("color-numbers", s);
     }

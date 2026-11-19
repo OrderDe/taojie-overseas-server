@@ -342,7 +342,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
     public List<AdminUserResponse> listUsers() {
         Map<Long, String> roleNames = roleDao.selectList(new LambdaQueryWrapper<OverseasAdminRole>()).stream()
                 .collect(Collectors.toMap(OverseasAdminRole::getId, OverseasAdminRole::getName));
-        return list(new LambdaQueryWrapper<OverseasAdminUser>().orderByAsc(OverseasAdminUser::getId))
+        return list(new LambdaQueryWrapper<OverseasAdminUser>().orderByDesc(OverseasAdminUser::getId))
                 .stream().map(u -> toUserResponse(u, roleNames)).collect(Collectors.toList());
     }
 
@@ -453,7 +453,7 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
     @Override
     public List<AdminRoleResponse> listRoles() {
         return roleDao.selectList(new LambdaQueryWrapper<OverseasAdminRole>()
-                        .orderByAsc(OverseasAdminRole::getId))
+                        .orderByDesc(OverseasAdminRole::getId))
                 .stream().map(this::toRoleResponse).collect(Collectors.toList());
     }
 

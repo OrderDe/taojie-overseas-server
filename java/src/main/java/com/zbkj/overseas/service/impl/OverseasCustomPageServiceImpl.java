@@ -117,9 +117,10 @@ public class OverseasCustomPageServiceImpl extends ServiceImpl<OverseasCustomPag
 
     @Override
     public List<CustomPageResponse> listForAdmin() {
+        // Admin list is pure id-desc (newest first) by product decision;
+        // the storefront list above keeps sort asc.
         return list(new LambdaQueryWrapper<OverseasCustomPage>()
-                .orderByAsc(OverseasCustomPage::getSort)
-                .orderByAsc(OverseasCustomPage::getId))
+                .orderByDesc(OverseasCustomPage::getId))
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 

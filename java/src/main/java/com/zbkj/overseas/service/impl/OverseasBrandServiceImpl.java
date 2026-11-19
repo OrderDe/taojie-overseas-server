@@ -66,9 +66,10 @@ public class OverseasBrandServiceImpl extends ServiceImpl<OverseasBrandDao, Over
                 .stream()
                 .filter(p -> StrUtil.isNotBlank(p.getBrandId()))
                 .collect(Collectors.groupingBy(OverseasProduct::getBrandId, Collectors.counting()));
+        // Admin list is pure id-desc (newest first) by product decision;
+        // the storefront list above keeps sort asc.
         return list(new LambdaQueryWrapper<OverseasBrand>()
-                .orderByAsc(OverseasBrand::getSort)
-                .orderByAsc(OverseasBrand::getId))
+                .orderByDesc(OverseasBrand::getId))
                 .stream()
                 .map(b -> toAdminResponse(b, counts.getOrDefault(b.getId(), 0L).intValue()))
                 .collect(Collectors.toList());
