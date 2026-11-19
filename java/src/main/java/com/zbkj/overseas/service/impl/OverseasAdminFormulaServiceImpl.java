@@ -106,23 +106,30 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
         s = new Spec();
         s.dao = carModelDao; s.entityClass = OverseasCarModel.class; s.hasDeleted = true;
         s.searchCols = List.of("model", "brand"); s.filterCols = Map.of("brandId", "brand_id");
-        s.orderCols = List.of("sort_rank", "id"); s.required = List.of("model");
+        s.orderCols = List.of("sort_rank", "id"); s.required = List.of("model", "brandId");
         specs.put("car-models", s);
 
         s = new Spec();
         s.dao = carCountryDao; s.entityClass = OverseasCarCountry.class; s.hasDeleted = false;
         s.searchCols = List.of("name", "name_en"); s.orderCols = List.of("sort_rank", "id");
+        // Bug #19: name/nameEn/language/code are required server-side too;
+        // state/sortRank carry dialog defaults, so they are only enforced
+        // by the admin form, not blocked here.
+        s.required = List.of("name", "nameEn", "language", "code");
         specs.put("car-countries", s);
 
         s = new Spec();
         s.dao = carFactoryDao; s.entityClass = OverseasCarFactory.class; s.hasDeleted = false; s.inputId = true;
         s.searchCols = List.of("name"); s.filterCols = Map.of("brandId", "brand_id");
         s.orderCols = List.of("sort_rank", "id");
+        // Bug #18: same split as countries — state/sortRank stay form-side.
+        s.required = List.of("name", "brandId", "country");
         specs.put("car-factories", s);
 
         s = new Spec();
         s.dao = colorCardDao; s.entityClass = OverseasColorCard.class; s.hasDeleted = true; s.inputId = true;
         s.searchCols = List.of("name", "code"); s.orderCols = List.of("id");
+        s.required = List.of("name", "code");
         specs.put("color-cards", s);
 
         s = new Spec();
@@ -142,6 +149,7 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
         s = new Spec();
         s.dao = colorBrandDao; s.entityClass = OverseasColorBrand.class; s.hasDeleted = true;
         s.searchCols = List.of("name"); s.orderCols = List.of("id");
+        s.required = List.of("name", "logo");
         specs.put("color-brands", s);
 
         s = new Spec();
@@ -224,12 +232,8 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
         if (fieldOf(row.getClass(), "enable") != null && getField(row, "enable") == null) {
             setField(row, "enable", "1");
         }
-        for (String field : spec.required) {
-            Object v = getField(row, field);
-            if (v == null || (v instanceof String && ((String) v).isEmpty())) {
-                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), field + " is required");
-            }
-        }
+        validateRequired(entity, spec, row);
+        validateUnique(entity, row, null);
         if (spec.inputId && getField(row, "id") == null) {
             setField(row, "id", nextId(spec));
         }
@@ -245,6 +249,8 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
             throw new OverseasException(404, "record not found");
         }
         applyBody(row, body == null ? Map.of() : body);
+        validateRequired(entity, spec, row);
+        validateUnique(entity, row, id);
         setIfPresent(row, "updateTime", new Date());
         spec.dao.updateById(row);
         return FormulaRowUtil.rowOut(spec.dao.selectById(id));
@@ -252,7 +258,104 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
 
     @Override
     public void delete(String entity, Long id) {
-        spec(entity).dao.deleteById(id);
+        Spec spec = spec(entity);
+        // Bug #12: a colour number that still has live formula lines
+        // must not be deleted — its lines would be orphaned (the old UI
+        // copy even warned they "won't be deleted automatically").
+        if ("color-numbers".equals(entity)) {
+            Long n = colorFormulaDao.selectCount(new LambdaQueryWrapper<OverseasColorFormula>()
+                    .eq(OverseasColorFormula::getColornumId, id)
+                    .eq(OverseasColorFormula::getIsDeleted, "0"));
+            if (n != null && n > 0) {
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(),
+                        "该色号下还有 " + n + " 条配方行，请先删除配方行后再删除色号");
+            }
+        }
+        // Bug #13 (delete guard): a masterbatch whose model is still
+        // referenced by live formula lines must not be deleted either.
+        if ("masterbatches".equals(entity)) {
+            Object mb = spec.dao.selectById(id);
+            Object model = mb == null ? null : getField(mb, "model");
+            if (model != null && !String.valueOf(model).isBlank()) {
+                Long n = colorFormulaDao.selectCount(new LambdaQueryWrapper<OverseasColorFormula>()
+                        .eq(OverseasColorFormula::getModel, String.valueOf(model))
+                        .eq(OverseasColorFormula::getIsDeleted, "0"));
+                if (n != null && n > 0) {
+                    throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(),
+                            "色母型号「" + model + "」已被 " + n + " 条配方行使用，请先清理配方行后再删除色母");
+                }
+            }
+        }
+        spec.dao.deleteById(id);
+    }
+
+    // ---- required fields / uniqueness (batch-1 validation) ----
+
+    private static final Map<String, String> FIELD_LABELS = Map.ofEntries(
+            Map.entry("name", "名称"),
+            Map.entry("code", "编码"),
+            Map.entry("model", "型号"),
+            Map.entry("engName", "英文名"),
+            Map.entry("nameEn", "英文名"),
+            Map.entry("language", "语言"),
+            Map.entry("country", "国家"),
+            Map.entry("brandId", "品牌"),
+            Map.entry("modelId", "车型"),
+            Map.entry("logo", "Logo"));
+
+    private void validateRequired(String entity, Spec spec, Object row) {
+        for (String field : spec.required) {
+            Object v = getField(row, field);
+            if (v == null || (v instanceof String && ((String) v).isBlank())) {
+                String label = FIELD_LABELS.getOrDefault(field, field);
+                if ("color-numbers".equals(entity) && "name".equals(field)) {
+                    label = "色号";
+                }
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), label + " 必填");
+            }
+        }
+    }
+
+    private void validateUnique(String entity, Object row, Long excludeId) {
+        // Bug #11: (brandId, modelId, colorNum) unique among live
+        // car-colors rows; a blank colorNum has nothing to dedupe on.
+        if ("car-colors".equals(entity)) {
+            Object brandId = getField(row, "brandId");
+            Object modelId = getField(row, "modelId");
+            Object colorNum = getField(row, "colorNum");
+            if (brandId == null || modelId == null || colorNum == null || String.valueOf(colorNum).isBlank()) {
+                return;
+            }
+            QueryWrapper<OverseasCarColor> w = new QueryWrapper<OverseasCarColor>()
+                    .eq("brand_id", brandId)
+                    .eq("model_id", modelId)
+                    .eq("color_num", String.valueOf(colorNum))
+                    .eq("is_deleted", "0");
+            if (excludeId != null) {
+                w.ne("id", excludeId);
+            }
+            Long n = carColorDao.selectCount(w);
+            if (n != null && n > 0) {
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "该品牌+车型+色号已存在");
+            }
+        }
+        // Bug #15: colour-card name unique among live rows.
+        if ("color-cards".equals(entity)) {
+            Object name = getField(row, "name");
+            if (name == null || String.valueOf(name).isBlank()) {
+                return;
+            }
+            QueryWrapper<OverseasColorCard> w = new QueryWrapper<OverseasColorCard>()
+                    .eq("name", String.valueOf(name))
+                    .eq("is_deleted", "0");
+            if (excludeId != null) {
+                w.ne("id", excludeId);
+            }
+            Long n = colorCardDao.selectCount(w);
+            if (n != null && n > 0) {
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "色卡名称已存在");
+            }
+        }
     }
 
     // ---- colour numbers (same engine, fixed entity) ----
