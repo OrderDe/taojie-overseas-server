@@ -24,11 +24,20 @@ public class SiteConfigRequest {
     @Schema(description = "首页主标题")
     private String heroTitle;
 
+    @Schema(description = "首页主标题（多语言 {语言码: 文案}，前台优先读它，旧单语言字段由后台保存时同步为 zh 值）")
+    private Map<String, String> heroTitleI18n;
+
     @Schema(description = "首页副标题")
     private String heroSubtitle;
 
+    @Schema(description = "首页副标题（多语言 {语言码: 文案}）")
+    private Map<String, String> heroSubtitleI18n;
+
     @Schema(description = "顶部公告")
     private String announcement;
+
+    @Schema(description = "顶部公告（多语言 {语言码: 文案}）")
+    private Map<String, String> announcementI18n;
 
     @Schema(description = "是否显示询价入口")
     private Boolean showRfq;
@@ -67,6 +76,9 @@ public class SiteConfigRequest {
 
     @Schema(description = "英雄区眉题，覆盖主题名")
     private String heroEyebrow;
+
+    @Schema(description = "英雄区眉题（多语言 {语言码: 文案}）")
+    private Map<String, String> heroEyebrowI18n;
 
     @Schema(description = "经销商卡标题")
     private String dealerTitle;
@@ -165,6 +177,9 @@ public class SiteConfigRequest {
 
         @Schema(description = "菜单文字")
         private String label;
+
+        @Schema(description = "菜单文字（多语言 {语言码: 文案}，前台优先读它；label 由后台保存时同步为 zh 值）")
+        private Map<String, String> names;
 
         private String labelKey;
 

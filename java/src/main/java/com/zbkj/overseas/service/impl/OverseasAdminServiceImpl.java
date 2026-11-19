@@ -308,6 +308,8 @@ public class OverseasAdminServiceImpl extends ServiceImpl<OverseasAdminUserDao, 
         }
         boolean touchesOwn = request.getDefaultLanguage() != null || request.getHeroTitle() != null
                 || request.getHeroSubtitle() != null || request.getAnnouncement() != null
+                || request.getHeroTitleI18n() != null || request.getHeroSubtitleI18n() != null
+                || request.getAnnouncementI18n() != null || request.getHeroEyebrowI18n() != null
                 || request.getShowRfq() != null || request.getShowCart() != null || request.getShowPrices() != null
                 || request.getShowDealer() != null || request.getShowContact() != null
                 || request.getWhatsapp() != null || request.getEmail() != null || request.getCurrency() != null

@@ -30,8 +30,11 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("defaultTheme", "H");
         DEFAULTS.put("defaultLanguage", "en");
         DEFAULTS.put("heroTitle", "");
+        DEFAULTS.put("heroTitleI18n", new LinkedHashMap<>());
         DEFAULTS.put("heroSubtitle", "");
+        DEFAULTS.put("heroSubtitleI18n", new LinkedHashMap<>());
         DEFAULTS.put("announcement", "");
+        DEFAULTS.put("announcementI18n", new LinkedHashMap<>());
         DEFAULTS.put("showRfq", true);
         DEFAULTS.put("showCart", false);
         DEFAULTS.put("showPrices", true);
@@ -46,6 +49,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("navItems", new ArrayList<>());
         DEFAULTS.put("navigationConfigured", false);
         DEFAULTS.put("heroEyebrow", "");
+        DEFAULTS.put("heroEyebrowI18n", new LinkedHashMap<>());
         DEFAULTS.put("dealerTitle", "");
         DEFAULTS.put("dealerText", "");
         DEFAULTS.put("dealerButton", "");
@@ -67,6 +71,10 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         // backend): contact = contact-details modal (default),
         // rfq = quote form, chat = online chat.
         DEFAULTS.put("salesBtnAction", "contact");
+        // Live-chat idle auto-close window in hours (0 = never). Written
+        // only through the chat settings endpoint (chat permission), not
+        // through the site-config PUT — see OverseasChatServiceImpl.
+        DEFAULTS.put("chatAutoCloseHours", 0);
         // Footer content (mirrors the Node backend's defaults, which
         // reproduce the storefront's previously hardcoded footer).
         DEFAULTS.put("footerBlurb", langMap(
@@ -371,6 +379,49 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         return out;
     }
 
+    // Language codes of the admin registry (admin src/utils/langs.js):
+    // zh source + the eleven translation targets.
+    private static final List<String> NAME_LANG_CODES =
+            List.of("zh", "en", "es", "fr", "pt", "id", "ms", "vi", "th", "ar", "ru", "de");
+
+    private static final List<String> NAV_ITEM_TYPES = List.of("", "category", "anchor", "external", "page");
+
+    // Nav-item guards: bound every text field, whitelist the jump type,
+    // and keep only registry-language string values in the item's
+    // multi-language `names` map (the storefront resolves
+    // names[lang] → names.en → names.zh → label).
+    private static List<SiteConfigRequest.NavItem> sanitizeNavItems(List<SiteConfigRequest.NavItem> raw) {
+        List<SiteConfigRequest.NavItem> out = new ArrayList<>();
+        if (raw == null) {
+            return out;
+        }
+        for (SiteConfigRequest.NavItem item : raw) {
+            if (item == null || out.size() >= 30) {
+                continue;
+            }
+            SiteConfigRequest.NavItem clean = new SiteConfigRequest.NavItem();
+            clean.setLabel(truncate(item.getLabel() == null ? "" : item.getLabel().trim(), 200));
+            clean.setLabelKey(truncate(item.getLabelKey() == null ? "" : item.getLabelKey().trim(), 100));
+            clean.setEnabled(item.getEnabled());
+            clean.setLink(truncate(item.getLink() == null ? "" : item.getLink().trim(), 1000));
+            String type = item.getType() == null ? "" : item.getType();
+            clean.setType(NAV_ITEM_TYPES.contains(type) ? type : "");
+            clean.setCategoryId(truncate(item.getCategoryId() == null ? "" : item.getCategoryId().trim(), 100));
+            Map<String, String> names = new LinkedHashMap<>();
+            if (item.getNames() != null) {
+                for (String code : NAME_LANG_CODES) {
+                    String v = item.getNames().get(code);
+                    if (v != null && !v.trim().isEmpty()) {
+                        names.put(code, truncate(v.trim(), 300));
+                    }
+                }
+            }
+            clean.setNames(names);
+            out.add(clean);
+        }
+        return out;
+    }
+
     private static Map<String, String> sanitizeLangMap(Map<String, String> raw, int maxLen) {
         Map<String, String> out = new LinkedHashMap<>();
         if (raw == null) {
@@ -431,12 +482,28 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("heroTitle", request.getHeroTitle());
         putIfPresent("heroSubtitle", request.getHeroSubtitle());
         putIfPresent("announcement", request.getAnnouncement());
+        // Multi-language hero copy ({lang: text} maps, stored as JSON
+        // strings like searchPlaceholder); the storefront resolves
+        // I18n[lang] → I18n.en → I18n.zh → the legacy single-language
+        // field above → theme default.
+        if (request.getHeroTitleI18n() != null) {
+            put("heroTitleI18n", JSONUtil.toJsonStr(sanitizeLangMap(request.getHeroTitleI18n(), 500)));
+        }
+        if (request.getHeroSubtitleI18n() != null) {
+            put("heroSubtitleI18n", JSONUtil.toJsonStr(sanitizeLangMap(request.getHeroSubtitleI18n(), 2000)));
+        }
+        if (request.getAnnouncementI18n() != null) {
+            put("announcementI18n", JSONUtil.toJsonStr(sanitizeLangMap(request.getAnnouncementI18n(), 1000)));
+        }
         putIfPresent("whatsapp", request.getWhatsapp());
         putIfPresent("email", request.getEmail());
         putIfPresent("currency", request.getCurrency());
         putIfPresent("baseCurrency", request.getBaseCurrency());
         putIfPresent("logo", request.getLogo());
         putIfPresent("heroEyebrow", request.getHeroEyebrow());
+        if (request.getHeroEyebrowI18n() != null) {
+            put("heroEyebrowI18n", JSONUtil.toJsonStr(sanitizeLangMap(request.getHeroEyebrowI18n(), 500)));
+        }
         putIfPresent("dealerTitle", request.getDealerTitle());
         putIfPresent("dealerText", request.getDealerText());
         putIfPresent("dealerButton", request.getDealerButton());
@@ -503,7 +570,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
             put("navigationConfigured", String.valueOf(request.getNavigationConfigured()));
         }
         if (request.getNavItems() != null) {
-            put("navItems", JSONUtil.toJsonStr(request.getNavItems()));
+            put("navItems", JSONUtil.toJsonStr(sanitizeNavItems(request.getNavItems())));
         }
         return getConfigMap();
     }
@@ -539,10 +606,18 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         if ("profileMode".equals(key)) {
             return "custom".equals(value) ? "custom" : "embed";
         }
+        if ("chatAutoCloseHours".equals(key)) {
+            try {
+                return Math.max(0, Integer.parseInt(value == null ? "" : value.trim()));
+            } catch (Exception e) {
+                return 0;
+            }
+        }
         if ("salesBtnAction".equals(key)) {
             return ("rfq".equals(value) || "chat".equals(value)) ? value : "contact";
         }
-        if ("searchPlaceholder".equals(key) || "footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)) {
+        if ("searchPlaceholder".equals(key) || "footerBlurb".equals(key) || "footerNote".equals(key) || "footerCopyright".equals(key)
+                || "heroTitleI18n".equals(key) || "heroSubtitleI18n".equals(key) || "announcementI18n".equals(key) || "heroEyebrowI18n".equals(key)) {
             if (StrUtil.isBlank(value)) {
                 return new LinkedHashMap<>();
             }
