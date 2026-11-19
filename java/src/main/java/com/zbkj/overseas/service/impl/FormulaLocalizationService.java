@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.UnaryOperator;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Display text only: codes, IDs and measurements stay exact. */
@@ -28,7 +29,36 @@ public class FormulaLocalizationService {
         Map.entry("奔驰","Mercedes-Benz"), Map.entry("比亚迪","BYD"), Map.entry("丰田","Toyota"),
         Map.entry("本田","Honda"), Map.entry("日产","Nissan"), Map.entry("福特","Ford"),
         Map.entry("马自达","Mazda"), Map.entry("沃尔沃","Volvo"), Map.entry("雪佛兰","Chevrolet"),
-        Map.entry("保时捷","Porsche"), Map.entry("特斯拉","Tesla"), Map.entry("雷克萨斯","Lexus"));
+        Map.entry("保时捷","Porsche"), Map.entry("特斯拉","Tesla"), Map.entry("雷克萨斯","Lexus"),
+        Map.entry("五菱","Wuling"), Map.entry("东风","Dongfeng"), Map.entry("吉利","Geely"),
+        Map.entry("长安","Changan"), Map.entry("长城","Great Wall"), Map.entry("哈弗","Haval"),
+        Map.entry("奇瑞","Chery"), Map.entry("红旗","Hongqi"), Map.entry("荣威","Roewe"),
+        Map.entry("名爵","MG"), Map.entry("宝骏","Baojun"), Map.entry("传祺","Trumpchi"),
+        Map.entry("广汽","GAC"), Map.entry("北汽","BAIC"), Map.entry("江淮","JAC"),
+        Map.entry("上汽","SAIC"), Map.entry("上汽大通","Maxus"), Map.entry("大通","Maxus"),
+        Map.entry("蔚来","NIO"), Map.entry("小鹏","XPeng"), Map.entry("理想","Li Auto"),
+        Map.entry("问界","AITO"), Map.entry("岚图","Voyah"), Map.entry("阿维塔","Avatr"),
+        Map.entry("深蓝","Deepal"), Map.entry("埃安","Aion"), Map.entry("哪吒","Neta"),
+        Map.entry("零跑","Leapmotor"), Map.entry("威马","Weltmeister"), Map.entry("高合","HiPhi"),
+        Map.entry("智己","IM"), Map.entry("极狐","Arcfox"), Map.entry("腾势","Denza"),
+        Map.entry("仰望","Yangwang"), Map.entry("方程豹","Fangchengbao"), Map.entry("捷途","Jetour"),
+        Map.entry("星途","Exeed"), Map.entry("极氪","Zeekr"), Map.entry("领克","Lynk & Co"),
+        Map.entry("坦克","Tank"), Map.entry("魏牌","WEY"), Map.entry("欧拉","Ora"),
+        Map.entry("飞凡","Rising Auto"), Map.entry("吉普","Jeep"), Map.entry("菲亚特","Fiat"),
+        Map.entry("铃木","Suzuki"), Map.entry("三菱","Mitsubishi"), Map.entry("五十铃","Isuzu"),
+        Map.entry("依维柯","Iveco"), Map.entry("斯柯达","Skoda"), Map.entry("标致","Peugeot"),
+        Map.entry("雪铁龙","Citroen"), Map.entry("现代","Hyundai"), Map.entry("起亚","Kia"),
+        Map.entry("别克","Buick"), Map.entry("凯迪拉克","Cadillac"), Map.entry("林肯","Lincoln"),
+        Map.entry("捷豹","Jaguar"), Map.entry("路虎","Land Rover"), Map.entry("宾利","Bentley"),
+        Map.entry("劳斯莱斯","Rolls-Royce"), Map.entry("法拉利","Ferrari"), Map.entry("兰博基尼","Lamborghini"),
+        Map.entry("玛莎拉蒂","Maserati"), Map.entry("阿斯顿马丁","Aston Martin"), Map.entry("迈凯伦","McLaren"),
+        Map.entry("路特斯","Lotus"), Map.entry("阿尔法罗密欧","Alfa Romeo"), Map.entry("讴歌","Acura"),
+        Map.entry("英菲尼迪","Infiniti"), Map.entry("斯巴鲁","Subaru"), Map.entry("中兴","ZX Auto"),
+        Map.entry("东南","Soueast"), Map.entry("海马","Haima"), Map.entry("众泰","Zotye"),
+        Map.entry("猎豹","Leopaard"), Map.entry("启辰","Venucia"), Map.entry("开瑞","Karry"),
+        Map.entry("凯翼","Cowin"), Map.entry("长安铃木","Changan Suzuki"), Map.entry("东风本田","Dongfeng Honda"),
+        Map.entry("东风日产","Dongfeng Nissan"), Map.entry("一汽丰田","FAW Toyota"), Map.entry("广汽丰田","GAC Toyota"),
+        Map.entry("广汽本田","GAC Honda"), Map.entry("上汽大众","SAIC Volkswagen"), Map.entry("吉利汽车","Geely Auto"));
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -56,8 +86,61 @@ public class FormulaLocalizationService {
         return node;
     }
     static String segments(String text,UnaryOperator<String> translate) {
-        return HAN.matcher(text).replaceAll(match->java.util.regex.Matcher.quoteReplacement(
-            BRANDS.containsKey(match.group())?BRANDS.get(match.group()):translate.apply(match.group())));
+        // Split the text into pieces: non-Han runs pass through literally,
+        // Han runs are scanned for brand names (see splitHanRun). Both
+        // localize() passes go through here, so the sources collected in
+        // pass one are exactly these split segments, never the whole run.
+        List<String> pieces=new ArrayList<>();
+        List<Boolean> brandPiece=new ArrayList<>();
+        Matcher matcher=HAN.matcher(text);
+        int pos=0;
+        while(matcher.find()) {
+            if(matcher.start()>pos) { pieces.add(text.substring(pos,matcher.start())); brandPiece.add(false); }
+            splitHanRun(matcher.group(),translate,pieces,brandPiece);
+            pos=matcher.end();
+        }
+        if(pos<text.length()) { pieces.add(text.substring(pos)); brandPiece.add(false); }
+        StringBuilder out=new StringBuilder();
+        boolean prevBrand=false;
+        for(int i=0;i<pieces.size();i++) {
+            String piece=pieces.get(i);
+            if(piece.isEmpty()) continue;
+            // A brand value jammed against a neighbouring Latin-letter
+            // segment reads as one made-up word (WulingHongguang,
+            // GeelyICON), so separate the seam with a space when both
+            // sides of it are Latin letters.
+            if(out.length()>0 && (brandPiece.get(i)||prevBrand)
+                && isLatin(out.charAt(out.length()-1)) && isLatin(piece.charAt(0))) out.append(' ');
+            out.append(piece);
+            prevBrand=brandPiece.get(i);
+        }
+        return out.toString();
+    }
+    private static void splitHanRun(String run,UnaryOperator<String> translate,List<String> pieces,List<Boolean> brandPiece) {
+        // Left to right: at each position the longest BRANDS key starting
+        // there wins (长安铃木 beats 长安); the Han text accumulated between
+        // two brand hits is handed to translate as a single segment, so
+        // 五菱宏光 becomes Wuling + translate(宏光) instead of one machine
+        // translation of the whole name.
+        StringBuilder plain=new StringBuilder();
+        int i=0;
+        while(i<run.length()) {
+            String brand=longestBrandAt(run,i);
+            if(brand==null) { plain.append(run.charAt(i)); i++; continue; }
+            if(plain.length()>0) { pieces.add(translate.apply(plain.toString())); brandPiece.add(false); plain.setLength(0); }
+            pieces.add(BRANDS.get(brand)); brandPiece.add(true);
+            i+=brand.length();
+        }
+        if(plain.length()>0) { pieces.add(translate.apply(plain.toString())); brandPiece.add(false); }
+    }
+    private static String longestBrandAt(String run,int offset) {
+        String best=null;
+        for(String key:BRANDS.keySet())
+            if(run.startsWith(key,offset) && (best==null||key.length()>best.length())) best=key;
+        return best;
+    }
+    private static boolean isLatin(char c) {
+        return Character.isLetter(c) && Character.UnicodeScript.of(c)==Character.UnicodeScript.LATIN;
     }
     private static String displayText(String field,String text,UnaryOperator<String> translate) {
         if ((field.equals("carColor") || field.equals("colorName")) && !HAN.matcher(text).find() && text.matches(".*[A-Za-z].*")) return translate.apply("en:"+text);
