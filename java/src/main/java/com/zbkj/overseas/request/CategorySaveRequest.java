@@ -24,4 +24,7 @@ public class CategorySaveRequest {
 
     @Schema(description = "排序，越小越靠前")
     private Integer sort;
+
+    @Schema(description = "是否显示（新建默认显示；编辑时不传表示保持不变）")
+    private Boolean active;
 }

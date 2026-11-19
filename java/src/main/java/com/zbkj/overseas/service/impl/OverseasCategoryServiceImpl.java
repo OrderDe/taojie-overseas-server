@@ -36,8 +36,11 @@ public class OverseasCategoryServiceImpl extends ServiceImpl<OverseasCategoryDao
     @Override public List<CategoryResponse> listForFront(String lang) {
         List<OverseasCategory> all = ordered();
         Map<String, Long> counts = counts(true);
-        Set<String> visibleIds = CategoryHierarchy.visibleIds(all);
-        return all.stream().filter(c -> visibleIds.contains(c.getId())).map(c -> {
+        // Bug #21: a category whose isShow is false never appears in the
+        // public list (previously a hidden category could leak back in
+        // as the ancestor of a visible child). Products under a hidden
+        // category keep their current behaviour in the product queries.
+        return all.stream().filter(c -> !Boolean.FALSE.equals(c.getIsShow())).map(c -> {
             CategoryResponse r = new CategoryResponse();
             r.setId(c.getId()); r.setParentId(CategoryHierarchy.parent(c));
             r.setLevel(CategoryHierarchy.level(all, c.getId()));
@@ -55,9 +58,15 @@ public class OverseasCategoryServiceImpl extends ServiceImpl<OverseasCategoryDao
         Map<String, String> names = request.getNames();
         if (names == null || (StrUtil.isBlank(names.get("en")) && StrUtil.isBlank(names.get("zh")))) fail("分类英文名/中文名至少填一个");
         List<OverseasCategory> all = ordered();
+        boolean creating = id == null;
         OverseasCategory c;
-        if (id == null) {
-            id = StrUtil.blankToDefault(StrUtil.trim(request.getId()), "c" + UUID.randomUUID().toString().replace("-", ""));
+        if (creating) {
+            // Bug #7: blank id used to become "c" + UUID gibberish; now a
+            // human-readable sequential number (max numeric id + 1).
+            id = StrUtil.trim(request.getId());
+            if (StrUtil.isBlank(id)) {
+                id = SequentialStringId.next(all.stream().map(OverseasCategory::getId).toList());
+            }
             if (!id.matches("[a-zA-Z0-9_-]+") || id.length() > 64) fail("分类 ID 只能包含字母、数字、- 和 _，长度不超过 64");
             if (getById(id) != null) fail("分类 ID 已存在");
             c = new OverseasCategory().setId(id).setCreateTime(new Date());
@@ -70,7 +79,17 @@ public class OverseasCategoryServiceImpl extends ServiceImpl<OverseasCategoryDao
         try { CategoryHierarchy.validateMove(all, id, parentId); }
         catch (IllegalArgumentException e) { fail(e.getMessage()); }
         c.setParentId(parentId); c.setNames(JSONUtil.toJsonStr(names));
-        c.setSort(request.getSort() == null ? 0 : request.getSort()); c.setIsShow(true); c.setUpdateTime(new Date());
+        c.setSort(request.getSort() == null ? 0 : request.getSort());
+        // Bug #21: honour the admin's 显示/隐藏 choice. Create defaults to
+        // shown; an update that omits `active` (e.g. batch translation)
+        // preserves the stored value instead of forcing the category back
+        // to visible — the old code hard-coded isShow=true on every save.
+        if (creating) {
+            c.setIsShow(!Boolean.FALSE.equals(request.getActive()));
+        } else if (request.getActive() != null) {
+            c.setIsShow(request.getActive());
+        }
+        c.setUpdateTime(new Date());
         saveOrUpdate(c);
         List<OverseasCategory> updated = ordered();
         return toAdminResponse(c, updated, counts(false));
@@ -87,6 +106,7 @@ public class OverseasCategoryServiceImpl extends ServiceImpl<OverseasCategoryDao
         r.setLevel(CategoryHierarchy.level(all, c.getId()));
         r.setPathName(CategoryHierarchy.path(all, c.getId(), "zh"));
         r.setNames(LangUtil.toStringMap(c.getNames())); r.setSort(c.getSort());
+        r.setActive(!Boolean.FALSE.equals(c.getIsShow()));
         r.setCount(CategoryHierarchy.count(all, c.getId(), counts));
         return r;
     }

@@ -30,6 +30,9 @@ public class AdminCategoryResponse implements Serializable {
 
     private Integer sort;
 
+    @Schema(description = "是否显示")
+    private Boolean active;
+
     @Schema(description = "该分类下商品数（含下架）")
     private Integer count;
 }

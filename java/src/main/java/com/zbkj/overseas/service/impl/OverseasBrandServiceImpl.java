@@ -82,8 +82,13 @@ public class OverseasBrandServiceImpl extends ServiceImpl<OverseasBrandDao, Over
         }
         OverseasBrand b;
         if (id == null) {
-            String newId = StrUtil.blankToDefault(StrUtil.trim(request.getId()),
-                    "b" + Long.toString(System.currentTimeMillis(), 36));
+            // Bug #8: blank id used to become "b" + base36 timestamp
+            // gibberish; now a human-readable sequential number
+            // (max numeric id + 1), same rule as categories.
+            String requestedId = StrUtil.trim(request.getId());
+            String newId = StrUtil.isBlank(requestedId)
+                    ? SequentialStringId.next(list().stream().map(OverseasBrand::getId).toList())
+                    : requestedId;
             if (!newId.matches("[a-zA-Z0-9_-]+")) {
                 throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(), "品牌 ID 只能包含字母、数字、- 和 _");
             }
