@@ -82,11 +82,25 @@ public class FormulaLocalizationService {
             while(end<missing.size() && end-offset<32 && missing.get(end).startsWith("en:")==missing.get(offset).startsWith("en:")) end++;
             List<String> batch=missing.subList(offset,end);
             offset=end;
-            List<String> outputs=translateBatch(batch,lang);
+            List<String> outputs;
+            boolean translated;
+            try {
+                outputs=translateBatch(batch,lang);
+                translated=true;
+            } catch(RuntimeException e) {
+                // Translation is display-only sugar. If the translation
+                // service is unreachable (e.g. LibreTranslate not installed
+                // on this host), fall back to the source text instead of
+                // failing the whole formula query with a 503 — visitors
+                // still get the full colour list, just untranslated, and
+                // nothing is cached so a later retry can translate for real.
+                outputs=batch.stream().map(s->s.startsWith("en:")?s.substring(3):s).toList();
+                translated=false;
+            }
             for(int i=0;i<batch.size();i++) {
-                String source=batch.get(i),translated=outputs.get(i);
-                jdbc.update("INSERT INTO eb_overseas_formula_translation(source_hash,lang,source_text,translated_text) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE translated_text=VALUES(translated_text)",hash(source),lang,source,translated);
-                translations.put(source,translated);
+                String source=batch.get(i),text=outputs.get(i);
+                if(translated) jdbc.update("INSERT INTO eb_overseas_formula_translation(source_hash,lang,source_text,translated_text) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE translated_text=VALUES(translated_text)",hash(source),lang,text);
+                translations.put(source,text);
             }
         }
         return rewriteFields(tree,(field,text)->displayText(field,text,source->translations.getOrDefault(source,source)));
