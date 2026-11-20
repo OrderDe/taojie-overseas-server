@@ -36,6 +36,11 @@ class FormulaLocalizationTest {
   assertEquals("SAIC Volkswagen",FormulaLocalizationService.segments("上汽大众",s->s));
   assertEquals("Dongfeng Honda",FormulaLocalizationService.segments("东风本田",s->s));
  }
+ @Test void segmentsTier1FullBrandNames() {
+  assertEquals("Li Auto",FormulaLocalizationService.segments("理想汽车",s->s));
+  assertEquals("Soueast",FormulaLocalizationService.segments("东南汽车",s->s));
+  assertEquals("Aston·Martin",FormulaLocalizationService.segments("阿斯顿·马丁",s->s));
+ }
  @Test void segmentsSpacesBrandAgainstLatinNeighbours() {
   assertEquals("Geely ICON",FormulaLocalizationService.segments("吉利ICON",s->s));
   assertEquals("Wuling Geely",FormulaLocalizationService.segments("五菱吉利",s->s));
