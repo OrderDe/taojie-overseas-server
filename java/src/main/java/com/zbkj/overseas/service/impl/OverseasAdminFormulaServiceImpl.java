@@ -274,19 +274,39 @@ public class OverseasAdminFormulaServiceImpl implements OverseasAdminFormulaServ
                         "该色号下还有 " + n + " 条配方行，请先删除配方行后再删除色号");
             }
         }
-        // Bug #13 (delete guard): a masterbatch whose model is still
-        // referenced by live formula lines must not be deleted either.
+        // Bug #13 (delete guard): a masterbatch still referenced by live
+        // formula lines must not be deleted. Lines reference a masterbatch
+        // two ways: rows created from the picker store its model, while the
+        // legacy tinting data references it by NAME (the old model codes do
+        // not exist in the masterbatch library at all). Checking the model
+        // alone therefore never fired; check both.
         if ("masterbatches".equals(entity)) {
             Object mb = spec.dao.selectById(id);
             Object model = mb == null ? null : getField(mb, "model");
+            Object name = mb == null ? null : getField(mb, "name");
+            long used = 0;
+            String usedBy = null;
             if (model != null && !String.valueOf(model).isBlank()) {
                 Long n = colorFormulaDao.selectCount(new LambdaQueryWrapper<OverseasColorFormula>()
                         .eq(OverseasColorFormula::getModel, String.valueOf(model))
                         .eq(OverseasColorFormula::getIsDeleted, "0"));
                 if (n != null && n > 0) {
-                    throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(),
-                            "色母型号「" + model + "」已被 " + n + " 条配方行使用，请先清理配方行后再删除色母");
+                    used = n;
+                    usedBy = "型号「" + model + "」";
                 }
+            }
+            if (used == 0 && name != null && !String.valueOf(name).isBlank()) {
+                Long n = colorFormulaDao.selectCount(new LambdaQueryWrapper<OverseasColorFormula>()
+                        .eq(OverseasColorFormula::getName, String.valueOf(name))
+                        .eq(OverseasColorFormula::getIsDeleted, "0"));
+                if (n != null && n > 0) {
+                    used = n;
+                    usedBy = "名称「" + name + "」";
+                }
+            }
+            if (used > 0) {
+                throw new OverseasException(CommonResultCode.VALIDATE_FAILED.getCode(),
+                        "色母" + usedBy + "已被 " + used + " 条配方行使用，请先清理配方行后再删除色母");
             }
         }
         spec.dao.deleteById(id);
