@@ -63,6 +63,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         DEFAULTS.put("instagram", "");
         DEFAULTS.put("facebook", "");
         DEFAULTS.put("x", "");
+        DEFAULTS.put("whatsappChannel", "");
         DEFAULTS.put("youtube", "");
         DEFAULTS.put("wechat", "");
         // Header search-box placeholder copy ({lang: text} map, mirrors
@@ -549,6 +550,7 @@ public class OverseasSiteConfigServiceImpl extends ServiceImpl<OverseasSiteConfi
         putIfPresent("instagram", request.getInstagram());
         putIfPresent("facebook", request.getFacebook());
         putIfPresent("x", request.getX());
+        putIfPresent("whatsappChannel", request.getWhatsappChannel());
         putIfPresent("youtube", request.getYoutube());
         putIfPresent("wechat", request.getWechat());
         if (request.getShowRfq() != null) {

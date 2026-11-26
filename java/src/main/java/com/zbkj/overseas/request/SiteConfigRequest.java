@@ -119,6 +119,9 @@ public class SiteConfigRequest {
     @Schema(description = "X (Twitter) 主页链接")
     private String x;
 
+    @Schema(description = "WhatsApp 频道邀请链接")
+    private String whatsappChannel;
+
     @Schema(description = "YouTube 频道链接")
     private String youtube;
 
