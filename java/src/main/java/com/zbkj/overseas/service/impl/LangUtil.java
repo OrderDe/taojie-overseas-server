@@ -21,7 +21,7 @@ final class LangUtil {
         }
         String l = lang.trim().toLowerCase();
         return switch (l) {
-            case "en", "zh", "es", "fr", "pt" -> l;
+            case "en", "zh", "es", "fr", "pt", "id", "ms", "vi", "th", "ar", "ru", "de" -> l;
             default -> "en";
         };
     }
